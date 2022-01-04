@@ -1,0 +1,231 @@
+import numpy as np
+import scipy
+from scipy import signal
+import pdb
+
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import KFold
+from sklearn.metrics import r2_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from pykalman import KalmanFilter
+
+from pyuoi.linear_model.var import VAR, form_lag_matrix
+from dca.dca import DynamicalComponentsAnalysis as DCA
+from dca.cov_util import (calc_cross_cov_mats_from_data, 
+                          calc_pi_from_cross_cov_mats)
+
+def decimate_(X, q):
+
+    Xdecimated = []
+    for i in range(X.shape[1]):
+        Xdecimated.append(signal.decimate(X[:, i], q))
+
+    return np.array(Xdecimated).T
+
+# If X has trial structure, need to seperately normalize each trial
+def standardize(X):
+
+    scaler = StandardScaler()
+
+    if np.ndim(X) == 3:
+        Xstd = np.array([scaler.fit_transform(X[idx, ...]) 
+                         for idx in range(X.shape[0])])
+    else:
+        Xstd = scaler.fit_transform(X)
+
+    assert(Xstd.shape == X.shape)
+    return Xstd
+
+# Turn position into velocity and acceleration with finite differences
+def expand_state_space(Z, X):
+
+    pos = Z[:, 2:, :]
+    vel = np.diff(Z, 1, axis=1)[:, 1:, :]
+    acc = np.diff(Z, 2, axis=1)
+
+    # Trim off 2 samples from the neural data to match lengths
+    X = X[:, 2:, :]
+
+    return np.concatenate((pos, vel, acc), axis=-1), X
+    
+def KF(X, Z):
+
+    # Assemble kinematic state variable (6D)
+    # Chop off the first 2 points for equal length vectors
+    pos = Z[2:, :]
+    vel = np.diff(Z, 1, axis=0, )[1:, :]
+    acc = np.diff(Z, 2, axis=0, )
+
+    z = np.hstack([pos, vel, acc])
+
+    # Trim neural data accordingly
+    x = X[2:, :]
+
+    # Kinematic mean and variance (same-time)
+    mu0 = np.mean(z, axis=0)
+    Sigma0 = np.cov(z.T)
+
+    # Kinematic state transition matrices
+    linregressor = LinearRegression(normalize=True, fit_intercept=True)
+    varmodel = VAR(estimator='ols', fit_intercept=True, order=1, 
+                   self_regress=True)
+    varmodel.fit(z)
+
+    A = np.squeeze(varmodel.coef_)
+    az = varmodel.intercept_
+
+    # Get the residual covariance
+    zpred, z_ = varmodel.predict(z)
+
+    epsilon = z_ - zpred
+    Sigmaz = np.cov(epsilon.T)
+
+    # Predict the neural data from the kinematic data
+    try:
+        linregressor.fit(z, x)
+    except:
+        pdb.set_trace()
+    Cxz = linregressor.coef_
+    cxz = linregressor.intercept_
+
+    # Can try to do poisson regression here
+
+    yypred = linregressor.predict(z)
+    epsilon = x - yypred
+    Sigmaxz = np.cov(epsilon.T)
+
+    # Instantiate a Kalman filter using these parameters
+    kf = KalmanFilter(transition_matrices = A, observation_matrices = Cxz,
+                      transition_covariance = Sigmaz, observation_covariance = Sigmaxz,
+                      transition_offsets = az, observation_offsets = cxz,
+                      initial_state_mean = mu0, initial_state_covariance=Sigma0)
+
+    return kf
+
+def kf_decoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=1):
+
+    Ztrain = scaler.fit_transform(Ztrain)
+    Xtrain = scaler.fit_transform(Xtrain)
+
+    Xtest = scaler.fit_transform(Xtest)
+    Ztest = scaler.fit_transform(Ztest)
+
+    # Apply train lag
+    if trainlag > 0:
+        Xtrain = Xtrain[:-trainlag, :]
+        Ztrain = Ztrain[trainlag:, :]
+
+    if testlag > 0:
+        # Apply test lag
+        Xtest = Xtest[:-testlag, :]
+        Ztest = Ztest[testlag:, :]
+
+    kf = KF(Xtrain, Ztrain)
+
+    state_estimates, _ = kf.filter(Xtest)
+
+    pos_estimates = state_estimates[:, 0:2]
+    vel_estimates = state_estimates[:, 2:4]
+    acc_estimates = state_estimates[:, 2:, ]
+
+    pos_true = Ztest[2:, :]
+    vel_true = np.diff(Ztest, 1, axis=0, )[1:, :]
+    acc_true = np.diff(Ztest, 2, axis=0, )
+
+    kf_r2_pos = r2_score(pos_true, pos_estimates)
+    kf_r2_vel = r2_score(vel_true, vel_estimates)
+    kf_r2_acc = r2_score(acc_true, acc_estimates)
+
+    return kf_r2_pos, kf_r2_vel, kf_r2_acc, kf
+
+def lr_preprocess(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window):
+    # If no trial structure is present, add an axis for easy coding
+    if np.ndim(Xtrain) == 2:
+        Xtrain = Xtrain[np.newaxis, ...]
+        Xtest = Xtest[np.newaxis, ...]
+
+        Ztrain = Ztrain[np.newaxis, ...]
+        Ztest = Ztest[np.newaxis, ...]
+
+
+    Ztrain = standardize(Ztrain)
+    Xtrain = standardize(Xtrain)
+
+    Ztest = standardize(Ztest)
+    Xtest = standardize(Xtest)
+
+
+    # Apply train lag
+    if trainlag > 0:
+        Xtrain = Xtrain[:, :-trainlag, :]
+        Ztrain = Ztrain[:, trainlag:, :]
+
+    # Apply test lag
+    if testlag > 0:
+        Xtest = Xtest[:, :-testlag, :]
+        Ztest = Ztest[:, testlag:, :]
+
+    # Apply decoding window
+    Xtrain, _ = form_lag_matrix(Xtrain, decoding_window)
+    Xtest, _ = form_lag_matrix(Xtest, decoding_window)
+
+    Xtrain = np.array(Xtrain)
+    Xtest = np.array(Xtest)
+
+    Ztrain = Ztrain[:, decoding_window//2:, :]
+    Ztrain = Ztrain[:, :Xtrain.shape[1], :]
+
+    Ztest = Ztest[:, decoding_window//2:, :]
+    Ztest = Ztest[:, :Xtest.shape[1], :]
+
+    # Expand state space to include velocity and acceleration
+    Ztrain, Xtrain = expand_state_space(Ztrain, Xtrain)
+    Ztest, Xtest = expand_state_space(Ztest, Xtest)
+
+    # Reshape to flatten trial structure
+    Xtrain = np.reshape(Xtrain, (-1, Xtrain.shape[-1]))
+    Xtest = np.reshape(Xtest, (-1, Xtest.shape[-1]))
+
+    Ztrain = np.reshape(Ztrain, (-1, Ztrain.shape[-1]))
+    Ztest = np.reshape(Ztest, (-1, Ztest.shape[-1]))
+
+    return Xtest, Xtrain, Ztest, Ztrain
+
+# Sticking with consistent nomenclature, Z is the behavioral data and X is the neural data
+def lr_encoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=1):
+
+    Xtest, Xtrain, Ztest, Ztrain = lr_preprocess(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, 1)
+
+    # Apply the decoding window to the behavioral data
+    # Ztrain, _ = form_lag_matrix(Ztrain, decoding_window)
+    # Ztest, _ = form_lag_matrix(Ztest, decoding_window)
+
+    # Xtrain = Xtrain[decoding_window//2:, :]
+    # Xtest = Xtest[:Ztest.shape[1], :]
+
+    encodingregressor = LinearRegression(normalize=True, fit_intercept=True)
+
+    # Throw away acceleration
+    # Ztest = Ztest[:, 0:4]
+    # Ztrain = Ztrain[:, 0:4]
+    encodingregressor.fit(Ztrain, Xtrain)
+    Xpred = encodingregressor.predict(Ztest)
+
+    r2 = r2_score(Xtest, Xpred)
+    return r2, encodingregressor
+
+def lr_decoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=1):
+
+    behavior_dim = Ztrain.shape[-1]
+
+    Xtest, Xtrain, Ztest, Ztrain = lr_preprocess(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window)
+    decodingregressor = LinearRegression(normalize=True, fit_intercept=True)
+    decodingregressor.fit(Xtrain, Ztrain)
+    Zpred = decodingregressor.predict(Xtest)
+
+    lr_r2_pos = r2_score(Ztest[..., 0:behavior_dim], Zpred[..., 0:behavior_dim])
+    lr_r2_vel = r2_score(Ztest[..., behavior_dim:2*behavior_dim], Zpred[..., behavior_dim:2*behavior_dim])
+    lr_r2_acc = r2_score(Ztest[..., 2*behavior_dim:], Zpred[..., 2*behavior_dim:])
+
+    return lr_r2_pos, lr_r2_vel, lr_r2_acc, decodingregressor

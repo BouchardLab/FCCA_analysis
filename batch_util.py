@@ -46,7 +46,7 @@ def gen_sbatch(arg_array, sbatch_params, local=False,
             sb.write('#SBATCH --qos=%s\n' % qos)
             sb.write('#SBATCH --constraint=knl\n')
             if shifter:
-                sb.write('#SBATCH --image=docker:akumar25/nersc_base:latest\n')
+                sb.write('#SBATCH --image=docker:akumar25/nersc_conda_base:latest\n')
             sb.write('#SBATCH -N %d\n' % sbatch_params['total_nodes'])
             sb.write('#SBATCH -t %s\n' % sbatch_params['job_time'])
             sb.write('#SBATCH --job-name=%s%d\n' % (jobname, sbatch_params['jobnos'][0]))
@@ -211,9 +211,10 @@ def init_batch(submit_file, jobdir, job_time, qos='regular', local=False, shifte
     if split_sbatch:
         arg_array_split = np.array_split(arg_array, split_sbatch)
         n_nodes = np.array_split(n_nodes, split_sbatch)
+        jobnos = np.array_split(np.arange(len(arg_array)), split_sbatch)
         for i, arg_array_ in enumerate(arg_array_split):
             sbatch_params = {'qos':qos, 'jobname':jobname, 'tpn': tpn,
-                             'cpt': cpt, 'script_path':script_path, 'jobdir': jobdir, 'jobnos': [i],
+                             'cpt': cpt, 'script_path':script_path, 'jobdir': jobdir, 'jobnos': jobnos[i],
                              'job_time': job_time, 'n_nodes': n_nodes[i], 'total_nodes': sum(n_nodes[i]),
                              'sequential': sequential, 'ncomms': ncomms, 'sbname':'sbatch_%d.sh' % i,
                              'cmd_args0': {'analysis_type':analysis_type},

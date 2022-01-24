@@ -456,6 +456,7 @@ def main(cmd_args, args):
 
         varmodel = VAR(estimator=args['task_args']['estimator'], 
                         penalty=args['task_args']['penalty'], 
+                        continuous=args['task_arsg']['continuous'],
                         order=args['task_args']['order'],
                         fit_type=args['task_args']['fit_type'],
                         self_regress = args['task_args']['self_regress'],

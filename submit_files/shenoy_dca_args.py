@@ -2,11 +2,11 @@ import glob
 import os
 import numpy as np
 
-script_path = '/global/homes/a/akumar25/repos/neural_control/batch_analysis.py'
-#script_path = '/home/akumar/nse/localization/batch_analysis_sabes.py'
+#script_path = '/global/homes/a/akumar25/repos/neural_control/batch_analysis.py'
+script_path = '/home/akumar/nse/neural_control/batch_analysis.py'
 desc = 'Revsiting shenoy dataset with trial aggregation and KCA'
-data_path = os.environ['SCRATCH'] + '/shenoy'
-#data_path = '/mnt/Secondary/data/shenoy'
+#data_path = os.environ['SCRATCH'] + '/shenoy'
+data_path = '/mnt/Secondary/data/shenoy'
 data_files = ['%s/RC,2009-09-18,1-2,good-ss.mat' % data_path]
 
 # Load the data files and determine how many dof (neurons) there are in each recording

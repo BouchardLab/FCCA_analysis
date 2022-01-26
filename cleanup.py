@@ -7,9 +7,9 @@ import itertools
 import pdb
 from sklearn.model_selection import KFold
 
-from batch_analysis_sabes import comm_split, dca_main, decoding_per_dim
+#from batch_analysis import comm_split, dca_main, decoding_per_dim
 from loaders import load_sabes, load_shenoy, load_peanut
-from schwimmbad import MPIPool, SerialPool
+# from schwimmbad import MPIPool, SerialPool
 
 LOADER_DICT = {'sabes': load_sabes, 'shenoy': load_shenoy, 'peanut': load_peanut}
 

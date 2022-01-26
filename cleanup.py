@@ -73,6 +73,12 @@ def cleanup_var(root_dir, job_name, data_path=None, resume=False):
 
         jobdir = '%s/%s_%d' % (root_dir, job_name, jobno)
 
+        results_file = '%s/%s_%d.dat' % (root_dir, job_name, jobno)
+
+        # First check if the results_file already exists. If so, continue
+        if os.path.exists(results_file):
+            continue
+
         # Load args and check if the job was completed
         with open(argfile, 'rb') as f:
             args = pickle.load(f)
@@ -83,7 +89,7 @@ def cleanup_var(root_dir, job_name, data_path=None, resume=False):
         else:
             data_file = args['data_file']
 
-        # Open the data file and find the n_dof
+        # Open the data file and find the n_dof 
         dat = LOADER_DICT[args['loader']](data_file, **args['loader_args'])
 
         n_dof = dat['spike_rates'].shape[-1]
@@ -100,7 +106,6 @@ def cleanup_var(root_dir, job_name, data_path=None, resume=False):
 
         # Concatenate results
         if len(to_do[jobno]) == 0:
-            results_file = '%s/%s_%d.dat' % (root_dir, job_name, jobno)
 
             coefs = np.zeros((n_dof, n_dof, args['task_args']['order']))
             scores_and_supports = {}

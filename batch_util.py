@@ -101,40 +101,6 @@ def gen_argfiles(jobdir, arg_array, fname):
         with open('%s/%s%d.dat' % (jobdir, fname, i), 'wb') as f:
             f.write(pickle.dumps(arg_))
 
-def adjust_resources(arg_array, jobdir, jobname, analysis_type, resume, 
-                     total_nodes, n_nodes, tpn, ncomms):
-    # Don't do anything for now
-#    if analysis_type == 'var' and resume:
-#
-#        n_nodes_ = np.zeros(len(arg_array))
-#        tpn_ = np.zeros(len(arg_array))
-#        ncomms_ = np.zeros(len(arg_array))
-#
-#        for i in range(len(arg_array)):
-#            results_file = '%s/%s_%d.dat' % (jobdir, jobname, i)
-#            results_folder = results_file.split('.')[0]
-#
-#            # Set n_nodes to 0, which will lead to this task not being given an srun statement
-#            if os.path.exists(results_file):
-#                continue
-#
-#            else:
-#
-#                # Currently not making any adjustments to these
-#                n_nodes_[i] = n_nodes
-#                tpn_[i] = tpn
-#                ncomms_[i] = ncomms
-#
-#    else:
-
-    n_nodes_ = n_nodes * np.ones(len(arg_array))
-    tpn_ = tpn * np.ones(len(arg_array))
-    ncomms_ = ncomms * np.ones(len(arg_array))
-
-    total_nodes = np.sum(n_nodes_)
-
-    return total_nodes, n_nodes_, tpn_, ncomms_
-
 # Possible kwargs in the case default job size estimation is to be overridden:
 # numtasks: number of total MPI processes desired
 # cpu_per_task: number of cpus to allocate per MPI process
@@ -194,8 +160,6 @@ def init_batch(submit_file, jobdir, job_time, qos='regular', local=False, shifte
     else:
         ncomms = 1
 
-    if local:
-        ncomms = None
 
     # Generate a set of argfiles that correspond to each unique param_comb. these are potentially references
     # by downstream analysis, but NOT the arg files that are loaded in when we run this job. This allows for
@@ -203,9 +167,10 @@ def init_batch(submit_file, jobdir, job_time, qos='regular', local=False, shifte
     pdb.set_trace() 
     gen_argfiles(jobdir, arg_array, fname='arg')
 
-    # Trim down/reallocate resources based on what has already been fit
-    total_nodes, n_nodes, tpn, ncomms = adjust_resources(arg_array, jobdir, jobname, args.analysis_type, False, 
-                                                         total_nodes, n_nodes, tpn, ncomms)
+    n_nodes = n_nodes * np.ones(len(arg_array))
+    tpn = tpn * np.ones(len(arg_array))
+    ncomms = ncomms * np.ones(len(arg_array))
+    total_nodes = np.sum(n_nodes)
 
     # Assemble sbatch params
     if split_sbatch:
@@ -218,7 +183,7 @@ def init_batch(submit_file, jobdir, job_time, qos='regular', local=False, shifte
                              'job_time': job_time, 'n_nodes': n_nodes[i], 'total_nodes': sum(n_nodes[i]),
                              'sequential': sequential, 'ncomms': ncomms, 'sbname':'sbatch_%d.sh' % i,
                              'cmd_args0': {'analysis_type':analysis_type},
-                             'cmd_args1': {'local':local, 'resume':resume}}
+                             'cmd_args1': {'resume':resume}}
 
             gen_sbatch(arg_array_, sbatch_params, local, shifter, resume)
 
@@ -229,9 +194,6 @@ def init_batch(submit_file, jobdir, job_time, qos='regular', local=False, shifte
                          'total_nodes': total_nodes, 'sequential' : sequential,  
                          'ncomms':ncomms,
                          'cmd_args0': {'analysis_type':analysis_type},
-                         'cmd_args1': {'local':local, 'resume':resume}}
+                         'cmd_args1': {'resume':resume}}
 
         gen_sbatch(arg_array, sbatch_params, local, shifter, resume)
-
-def slurm_submit():
-    pass

@@ -7,11 +7,11 @@ import numpy as np
 script_path = '/home/akumar/nse/neural_control/batch_analysis.py'
 
 desc = 'Optimality Principle based dimreduc on Peanut Data, methods operate on the autocorrelation sequence'
-data_path = '/media/akumar/Secondary/data/peanut'
+data_path = '/mnt/Secondary/data/peanut'
 data_files = ['%s/data_dict_peanut_day14.obj' % data_path]
 
 loader = 'peanut'
-analysis_type = 'dimreduc'
+analysis_type = 'parametric_dimreduc'
 
 # Each of these can be made into a list whose outer product is taken
 loader_args = [{'bin_width':25, 'epoch': epoch, 'filter_fn':'none', 'filter_kwargs':{}, 'boxcox':0.5, 'spike_threshold':200, 'speed_threshold':4}

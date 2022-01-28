@@ -231,7 +231,7 @@ def load_shenoy(data_path, bin_width, boxcox, filter_fn, filter_kwargs,
     return dat
 
 def load_sabes(filename, bin_width=50, boxcox=0.5, filter_fn='none', filter_kwargs={}, spike_threshold=100,
-               std_behavior=False):
+               std_behavior=False, **kwargs):
 
     # Convert bin width to s
     bin_width /= 1000

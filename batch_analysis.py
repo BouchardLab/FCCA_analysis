@@ -21,7 +21,7 @@ from dca_research.lqg import LQGComponentsAnalysis as LQGCA
 from dca.methods_comparison import SlowFeatureAnalysis as SFA
 
 
-from neurosim.models.ssr import StateSpaceRealization as SSR
+# from neurosim.models.ssr import StateSpaceRealization as SSR
 
 from schwimmbad import MPIPool, SerialPool
 
@@ -436,6 +436,7 @@ def dimreduc_(dim_vals,
               split_ranks, results_file,
               resume=False):
 
+    print(method)
     if comm is not None:
         # Create folder for processes to write in
         results_folder = results_file.split('.')[0]

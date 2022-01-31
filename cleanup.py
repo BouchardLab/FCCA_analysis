@@ -5,6 +5,7 @@ import pickle
 import marshal
 import itertools
 import pdb
+from tqdm import tqdm
 from sklearn.model_selection import KFold
 
 #from batch_analysis import comm_split, dca_main, decoding_per_dim
@@ -175,7 +176,7 @@ def cleanup_dca(root_dir, job_name):
 
     # For each arg file, get the number and then find the
     # directory
-    for argfile in argfiles:
+    for argfile in tqdm(argfiles):
 
         jobno = int(argfile.split('/')[-1].split('arg')[-1].split('.')[0])
 

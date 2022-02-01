@@ -37,9 +37,9 @@ DECODER_DICT = {'lr': lr_decoder, 'kf': kf_decoder}
 
 class PCA_wrapper():
 
-    def __init__(self, dim, **kwargs):
+    def __init__(self, d, **kwargs):
         self.pcaobj = PCA()
-        self.dim = dim
+        self.dim = d
 
     def fit(self, X):
         if np.ndim(X) == 3:
@@ -51,7 +51,7 @@ class PCA_wrapper():
         self.coef_ = self.pcaobj.components_.T[:, 0:self.dim]
 
     def score(self):
-        return sum(self.pcaobj.explained_variance_[:, 0:self.dim])
+        return sum(self.pcaobj.explained_variance_[0:self.dim])
 
 DIMREDUC_DICT = {'PCA': PCA_wrapper, 'DCA': DCA, 'KCA': KCA, 'LQGCA': LQGCA}
 
@@ -282,7 +282,7 @@ class PoolWorker():
         results_dict['fold_idx'] = fold_idx
         results_dict['train_idxs'] = train_idxs
         results_dict['test_idxs'] = test_idxs
-
+        results_dict['lag'] = 0
         results_dict['dimreduc_method'] = method
         results_dict['dimreduc_args'] = method_args
         results_dict['coef'] = coef
@@ -320,6 +320,9 @@ class PoolWorker():
         # Project the (train and test) data onto the subspace and train and score the requested decoder
         train_idxs = dimreduc_results[dimreduc_idx]['train_idxs']
         test_idxs = dimreduc_results[dimreduc_idx]['test_idxs']
+
+        print(X.shape)
+        print(Y.shape)
 
         Ytrain = Y[train_idxs, ...]
         Ytest = Y[test_idxs, ...]
@@ -471,7 +474,6 @@ def dimreduc_(dim_vals,
 
             # Do cv_splits here
             cv = KFold(n_folds, shuffle=False)
-
             train_test_idxs = list(cv.split(X))
             data_tasks = [(idx,) + train_test_split for idx, train_test_split
                         in enumerate(train_test_idxs)]    

@@ -10,10 +10,10 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from pykalman import KalmanFilter
 
-from pyuoi.linear_model.var import VAR, form_lag_matrix
+from pyuoi.linear_model.var import VAR
 from dca.dca import DynamicalComponentsAnalysis as DCA
 from dca.cov_util import (calc_cross_cov_mats_from_data, 
-                          calc_pi_from_cross_cov_mats)
+                          calc_pi_from_cross_cov_mats, form_lag_matrix)
 
 def decimate_(X, q):
 
@@ -31,23 +31,28 @@ def standardize(X):
     if np.ndim(X) == 3:
         Xstd = np.array([scaler.fit_transform(X[idx, ...]) 
                          for idx in range(X.shape[0])])
+    elif type(X) == list:
+        Xstd = [scaler.fit_transform(x) for x in X] 
     else:
         Xstd = scaler.fit_transform(X)
 
-    assert(Xstd.shape == X.shape)
     return Xstd
 
 # Turn position into velocity and acceleration with finite differences
 def expand_state_space(Z, X):
 
-    pos = Z[:, 2:, :]
-    vel = np.diff(Z, 1, axis=1)[:, 1:, :]
-    acc = np.diff(Z, 2, axis=1)
+    concat_state_space = []
+    for i, z in enumerate(Z):
+        pos = z[2:, :]
+        vel = np.diff(z, 1, axis=0)[1:, :]
+        acc = np.diff(z, 2, axis=0)
 
-    # Trim off 2 samples from the neural data to match lengths
-    X = X[:, 2:, :]
+        # Trim off 2 samples from the neural data to match lengths
+        X[i] = X[i][2:, :]
 
-    return np.concatenate((pos, vel, acc), axis=-1), X
+        concat_state_space.append(np.concatenate((pos, vel, acc), axis=-1))
+        
+    return concat_state_space, X
     
 def KF(X, Z):
 
@@ -140,14 +145,13 @@ def kf_decoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=
     return kf_r2_pos, kf_r2_vel, kf_r2_acc, kf
 
 def lr_preprocess(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window):
-    # If no trial structure is present, add an axis for easy coding
+    # If no trial structure is present, convert to a list for easy coding
     if np.ndim(Xtrain) == 2:
-        Xtrain = Xtrain[np.newaxis, ...]
-        Xtest = Xtest[np.newaxis, ...]
+        Xtrain = [Xtrain]
+        Xtest = [Xtest]
 
-        Ztrain = Ztrain[np.newaxis, ...]
-        Ztest = Ztest[np.newaxis, ...]
-
+        Ztrain = [Ztrain]
+        Ztest = [Ztest]
 
     Ztrain = standardize(Ztrain)
     Xtrain = standardize(Xtrain)
@@ -155,40 +159,36 @@ def lr_preprocess(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_wind
     Ztest = standardize(Ztest)
     Xtest = standardize(Xtest)
 
-
     # Apply train lag
     if trainlag > 0:
-        Xtrain = Xtrain[:, :-trainlag, :]
-        Ztrain = Ztrain[:, trainlag:, :]
+        Xtrain = [x[:-trainlag, :] for x in Xtrain]
+        Ztrain = [z[trainlag:, :] for z in Ztrain]
 
     # Apply test lag
     if testlag > 0:
-        Xtest = Xtest[:, :-testlag, :]
-        Ztest = Ztest[:, testlag:, :]
+        Xtest = [x[:-trainlag, :] for x in Xtest]
+        Ztest = [z[trainlag:, :] for z in Ztest]
+
 
     # Apply decoding window
-    Xtrain, _ = form_lag_matrix(Xtrain, decoding_window)
-    Xtest, _ = form_lag_matrix(Xtest, decoding_window)
+    Xtrain = [form_lag_matrix(x, decoding_window) for x in Xtrain]
+    Xtest = [form_lag_matrix(x, decoding_window) for x in Xtest]
 
-    Xtrain = np.array(Xtrain)
-    Xtest = np.array(Xtest)
+    Ztrain = [z[decoding_window//2:, :] for z in Ztrain]
+    Ztrain = [z[:x.shape[0], :] for z, x in zip(Ztrain, Xtrain)]
 
-    Ztrain = Ztrain[:, decoding_window//2:, :]
-    Ztrain = Ztrain[:, :Xtrain.shape[1], :]
-
-    Ztest = Ztest[:, decoding_window//2:, :]
-    Ztest = Ztest[:, :Xtest.shape[1], :]
+    Ztest = [z[decoding_window//2:, :] for z in Ztest]
+    Ztest = [z[:x.shape[0], :] for z, x in zip(Ztest, Xtest)]
 
     # Expand state space to include velocity and acceleration
     Ztrain, Xtrain = expand_state_space(Ztrain, Xtrain)
     Ztest, Xtest = expand_state_space(Ztest, Xtest)
 
-    # Reshape to flatten trial structure
-    Xtrain = np.reshape(Xtrain, (-1, Xtrain.shape[-1]))
-    Xtest = np.reshape(Xtest, (-1, Xtest.shape[-1]))
-
-    Ztrain = np.reshape(Ztrain, (-1, Ztrain.shape[-1]))
-    Ztest = np.reshape(Ztest, (-1, Ztest.shape[-1]))
+    # Flatten trial structure as regression will not care about it
+    Xtrain = np.concatenate(Xtrain)
+    Xtest = np.concatenate(Xtest)
+    Ztrain = np.concatenate(Ztrain)
+    Ztest = np.concatenate(Ztest)
 
     return Xtest, Xtrain, Ztest, Ztrain
 
@@ -209,6 +209,8 @@ def lr_encoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=
     # Throw away acceleration
     # Ztest = Ztest[:, 0:4]
     # Ztrain = Ztrain[:, 0:4]
+
+
     encodingregressor.fit(Ztrain, Xtrain)
     Xpred = encodingregressor.predict(Ztest)
 
@@ -217,10 +219,11 @@ def lr_encoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=
 
 def lr_decoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=1):
 
-    behavior_dim = Ztrain.shape[-1]
+    behavior_dim = Ztrain[0].shape[-1]
 
     Xtest, Xtrain, Ztest, Ztrain = lr_preprocess(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window)
     decodingregressor = LinearRegression(normalize=True, fit_intercept=True)
+
     decodingregressor.fit(Xtrain, Ztrain)
     Zpred = decodingregressor.predict(Xtest)
 

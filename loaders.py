@@ -13,6 +13,8 @@ from scipy.ndimage import convolve1d, gaussian_filter1d
 from copy import deepcopy
 import pdb
 
+from pynwb import NWBHDF5IO
+
 FILTER_DICT = {'gaussian':gaussian_filter1d, 'none': lambda x, **kwargs: x}
 
 def moving_center(X, n, axis=0):
@@ -45,17 +47,34 @@ def sinc_filter(X, fc, axis=0):
     h = h / np.sum(h)
     return convolve(X, h)        
 
-def window_spikes(spike_times, tstart, tend):
+def window_spike_array(spike_times, tstart, tend):
     windowed_spike_times = np.zeros(spike_times.shape, dtype=np.object)
+
     for i in range(spike_times.shape[0]):
         for j in range(spike_times.shape[1]):
-            windowed_spike_times[i, j] = \
-            np.intersect1d(spike_times[i, j][spike_times[i, j] > tstart[i]],
-                           spike_times[i, j][spike_times[i, j] < tend[i]]).astype(np.float)
-            # Offset spike_times to start at 0
-            if windowed_spike_times[i, j].size > 0:
-                    windowed_spike_times[i, j] -= tstart[i]
+            wst, _ = window_spikes(spike_times[i, j], tstart[i], tend[i])
+            windowed_spike_times[i, j] = wst
+
     return windowed_spike_times
+
+def window_spikes(spike_times, tstart, tend, start_idx=0):
+
+    spike_times = spike_times[start_idx:]
+    spike_times[spike_times > tstart]
+
+    if len(spike_times) > 0:
+        start_idx = np.argmax(spike_times > tstart)
+        end_idx = np.argmin(spike_times < tend)
+
+        windowed_spike_times = spike_times[start_idx:end_idx]
+
+        # Offset spike_times to start at 0
+        if windowed_spike_times.size > 0:
+                windowed_spike_times -= tstart
+
+        return windowed_spike_times, end_idx - 1
+    else:
+        return np.array([]), start_idx
 
 def align_behavior(x, T, bin_width):
     
@@ -63,6 +82,7 @@ def align_behavior(x, T, bin_width):
     bin_centers = bins + (bins[1] - bins[0])/2
     bin_centers = bin_centers[:-1]
     xaligned = np.zeros((bin_centers.size, x.shape[-1]))
+    
     for j in range(x.shape[-1]):
         interpolator = interp1d(np.linspace(0, T, x[:, j].size), x[:, j])
         xaligned[:, j] = interpolator(bin_centers)
@@ -84,13 +104,24 @@ def align_peanut_behavior(t, x, bins):
 def postprocess_spikes(spike_times, T, bin_width, boxcox, filter_fn, filter_kwargs,
                        spike_threshold=0, trial_threshold=1, high_pass=False):
 
+    # Trials are of different duration
+    if np.isscalar(T):
+        ragged_trials = False
+    else:
+        ragged_trials = True
+
     # Discretize time over bins
-    bins = np.linspace(0, T, int(T//bin_width))
-    spike_rates = np.zeros((spike_times.shape[0], bins.size - 1, 
-                           spike_times.shape[1]))
+    if ragged_trials:
+        bins = []
+        for i in range(len(T)):
+            bins.append(np.linspace(0, T[i], int(T[i]//bin_width)))
+        bins = np.array(bins, dtype=np.object)
+        spike_rates = np.zeros((spike_times.shape[0], spike_times.shape[1]), dtype=np.object)
+    else:
+        bins = np.linspace(0, T, int(T//bin_width))
+        spike_rates = np.zeros((spike_times.shape[0], spike_times.shape[1], bins.size - 1,))    
 
     # Did the trial/unit have enough spikes?
-
     insufficient_spikes = np.zeros(spike_times.shape)
     print('Processing spikes')
     for i in tqdm(range(spike_times.shape[0])):
@@ -100,7 +131,10 @@ def postprocess_spikes(spike_times, T, bin_width, boxcox, filter_fn, filter_kwar
             if np.any(np.isnan(spike_times[i, j])):
                 insufficient_spikes[i, j] = 1          
 
-            spike_counts = np.histogram(spike_times[i, j], bins=bins)[0]
+            if ragged_trials:
+                spike_counts = np.histogram(spike_times[i, j], bins=np.squeeze(bins[i]))[0]    
+            else:
+                spike_counts = np.histogram(spike_times[i, j], bins=bins)[0]
 
             if spike_threshold is not None:
                 if np.sum(spike_counts) <= spike_threshold:
@@ -118,13 +152,20 @@ def postprocess_spikes(spike_times, T, bin_width, boxcox, filter_fn, filter_kwar
             if high_pass:
                 spike_rates_ = moving_center(spike_rates_, 600)
 
-            spike_rates[i, :, j] = spike_rates_
+            spike_rates[i, j] = spike_rates_
 
     # Filter out bad units
     sufficient_spikes = np.arange(spike_times.shape[1])[np.sum(insufficient_spikes, axis=0) < \
                                                         (1 - (trial_threshold -1e-3)) * spike_times.shape[0]]
-    spike_rates = spike_rates[..., list(sufficient_spikes)]
-    
+
+    spike_rates = spike_rates[:, list(sufficient_spikes)]
+
+    # Transpose so time is along the the second 'axis'
+    if ragged_trials:
+        spike_rates = [np.array([spike_rates[i, j] for j in range(spike_rates.shape[1])]).T for i in range(spike_rates.shape[0])]
+    else:
+        spike_rates = np.transpose(spike_rates, (0, 2, 1))
+
     return spike_rates
 
 # Loader that operates on the files provided by the Shenoy lab
@@ -196,11 +237,11 @@ def load_shenoy(data_path, bin_width, boxcox, filter_fn, filter_kwargs,
 
 
     T  = tw[1] - tw[0]
-    spike_rates = postprocess_spikes(window_spikes(dat['spike_times'], dat['reach_times'] + tw[0], 
-                                                   reach_times + tw[1]),
-                                                   T, bin_width, boxcox, filter_fn, filter_kwargs, 
-                                                   spike_threshold=spike_threshold, 
-                                                   trial_threshold=trial_threshold)                      
+    spike_rates = postprocess_spikes(window_spike_array(dat['spike_times'], dat['reach_times'] + tw[0], 
+                                                        reach_times + tw[1]),
+                                                        T, bin_width, boxcox, filter_fn, filter_kwargs, 
+                                                        spike_threshold=spike_threshold, 
+                                                        trial_threshold=trial_threshold)                      
 
     dat['spike_rates'] = spike_rates         
 
@@ -280,7 +321,6 @@ def load_sabes(filename, bin_width=50, boxcox=0.5, filter_fn='none', filter_kwar
         spike_times = spike_times.reshape((1, -1))
         # Total length of the time series
         T = t[-1] - t[0]
-
         spike_rates = postprocess_spikes(spike_times, T, bin_width, boxcox,
                                          filter_fn, filter_kwargs, spike_threshold, high_pass=True)
 
@@ -419,6 +459,7 @@ def load_peanut(fpath, epoch, spike_threshold, bin_width=25, boxcox=0.5,
         pos_xy = pos_xy[1:, ...]
 
         spike_rates = spike_rates[np.abs(vel) > speed_threshold]
+
         pos_linear = pos_linear[np.abs(vel) > speed_threshold]
         pos_xy = pos_xy[np.abs(vel) > speed_threshold]
 
@@ -569,3 +610,87 @@ def location_bin_peanut(fpath, loc_file, epoch, spike_threshold=100, sigma = 2):
         occupation_normed_rates.append(smooth_binned_rates)
 
     return occupation_normed_rates, transition_bins
+
+def load_shenoy_large(path, bin_width=50, boxcox=0.5, filter_fn='none', filter_kwargs={}, spike_threshold=100,
+                      trial_threshold=0.5, std_behavior=False, location='M1', use_go_cue=False):
+
+    # Convert bin width to s
+    bin_width /= 1000
+
+    io = NWBHDF5IO(path, 'r')
+    nwbfile_in = io.read()
+
+    # Get successful trial indices
+    valid_trials = np.nonzero(nwbfile_in.trials.is_successful[:])[0]
+
+    print('%d valid trials' % len(valid_trials))
+
+    # Get index of electrodes located in the desired area
+    loc_dict = {'M1':'M1 Motor Cortex', 'PMC': 'Pre-Motor Cortex, dorsal'}
+    valid_units = []
+    for i, loc in enumerate(nwbfile_in.electrodes.location):
+        if loc == loc_dict[location]:
+            valid_units.append(i)
+
+    print('%d valid  units' % len(valid_units))
+
+    # Trialize spike_times
+    raw_spike_times = np.array(nwbfile_in.units.spike_times_index)
+    spike_times = np.zeros((len(valid_trials), len(valid_units)), dtype=np.object)
+    T = np.zeros((valid_trials.size, 2))
+    print('Trializing spike times')
+    for j, unit in tqdm(enumerate(valid_units)):
+        end_idx = 0
+        for i, trial in enumerate(valid_trials):
+            if use_go_cue:
+                T[i, 0] = nwbfile_in.trials.go_cue_time[trial]
+            else:
+                T[i, 0] = nwbfile_in.trials.start_time[trial]
+            T[i, 1] = nwbfile_in.trials.stop_time[trial]
+
+            windowed_spike_times, end_idx = window_spikes(raw_spike_times[unit], 
+                                                          T[i][0], T[i][1], end_idx)
+            spike_times[i, j] = windowed_spike_times
+        
+    # Filter spikes
+    T = np.squeeze(np.diff(T, axis=1))
+
+    spike_rates = postprocess_spikes(spike_times, T, bin_width, boxcox, filter_fn, filter_kwargs,
+                                     spike_threshold)
+
+    dat = {}
+    dat['target_pos'] = np.array([nwbfile_in.trials.target_pos_index[trial] for trial in valid_trials])
+    dat['spike_rates'] = spike_rates
+
+    # Return go_cue_times relative to start_time
+    dat['go_times'] = nwbfile_in.trials.go_cue_time[valid_trials] - nwbfile_in.trials.start_time[valid_trials]
+
+    # Trialize behavior
+    cursor = np.zeros(len(valid_trials), dtype=np.object) 
+    hand = np.zeros(len(valid_trials), dtype=np.object) 
+
+    t = nwbfile_in.processing['behavior'].data_interfaces['Position'].spatial_series['Cursor'].timestamps
+
+    print('Trializing Behavior')
+    for i, trial in tqdm(enumerate(valid_trials)):
+
+        if use_go_cue:
+            start_index = np.argmax(t > nwbfile_in.trials.go_cue_time[trial])
+        else:        
+            start_index = np.argmax(t > nwbfile_in.trials.start_time[trial])
+
+        end_index = np.argmin(t < nwbfile_in.trials.stop_time[trial])
+
+        cursor[i] = nwbfile_in.processing['behavior'].data_interfaces['Position'].spatial_series['Cursor'].data[start_index:end_index]
+        hand[i] = nwbfile_in.processing['behavior'].data_interfaces['Position'].spatial_series['Hand'].data[start_index:end_index]
+
+    # Align behavior    
+    cursor_interp = np.array([align_behavior(c, T[i], bin_width) for i, c in enumerate(cursor)], dtype=np.object)
+    hand_interp = np.array([align_behavior(h, T[i], bin_width) for i, h in enumerate(hand)], dtype=np.object)
+
+    dat['behavior'] = cursor_interp
+    dat['behavior_3D'] = hand_interp
+
+    io.close()
+
+    return dat

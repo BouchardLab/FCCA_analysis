@@ -3,7 +3,7 @@ import scipy
 import pdb
 
 from sklearn.linear_model import LinearRegression
-from sklearn.linear_model import RidgeRegression
+#from sklearn.linear_model import RidgeRegression
 
 from dca.cov_util import form_lag_matrix
 from neurosim.utils.riccati import discrete_generalized_riccati
@@ -38,43 +38,51 @@ def gen_toeplitz_from_blocks(blocks, order=None):
 
 class OLSEstimator():
 
-    def __init__(self):
-        pass
+    def __init__(self, T):
+        self.T = T
+        self.linregressor = LinearRegression(fit_intercept=False)
+    def fit(self, y, zt, zt1, zbart, zbart1):
 
-    def fit(y, zt, zt1, zbart, zbart1):
+        A = self.linregressor.fit(zt, zt1).coef_
+        C = self.linregressor.fit(zt, y[self.T:]).coef_
 
-        # Form an augmented forward time and reverse time feature vector, solve using OLS
-        Xforward = np.hstack([)
-        
+        # Separate A.T and Cbar
+        yrev = np.flipud(y)
+        At = self.linregressor.fit(zbart, zbart1).coef_
+        Cbar = self.linregressor.fit(zbart, yrev[self.T:]).coef_
+
+        pdb.set_trace()
+
 class RidgeEstimator():
-
+    pass
 # Method of Siddiqi et. al.
 class IteratedStableEstimator():
-
+    pass
 
 class SubspaceIdentification():
 
-    def __init__(self, ar_order=3,maxent_extend=True, 
-                 stability_regularization=True):
+    def __init__(self, T=3, estimator=OLSEstimator):
 
-        self.ar_order = ar_order
-        self.maxent_extend = maxent_extend
-        self.stability_regularization = stability_regularization
-    
-    def identify(self, y, T, min_order=None, max_order=None):
+        self.T = T
+        self.estimator = OLSEstimator(T)
 
+    def identify(self, y, T=None, min_order=None, max_order=None):
+        
+        if T is None:
+            T = self.T
         if min_order is None:
             min_order = y.shape[1]
         if max_order is None:
             max_order = T
         
-        orders = np.linspace(min_order, max_order, 2)
-        scores = np.zeros(order.size)
+        orders = np.linspace(min_order, max_order, 50)
+        scores = np.zeros(orders.size)
+       
         for i, order in enumerate(orders):
             # Factorize
-            zt, zt1, zbart, zbart1 = self.get_predictor_space(y, T, order)
+            zt, zt1, zbart, zbart1 = self.get_predictor_space(y, T, int(order))
             # Identify
-            A, C, Cbar = self.estimator.fit(ymt1, ymt, ypt1, zt, zt1, zbart, zbart1)
+            A, C, Cbar = self.estimator.fit(y, zt, zt1, zbart, zbart1)
             # Predict
             ypred = self.estimator.predict()
             # Score
@@ -84,13 +92,13 @@ class SubspaceIdentification():
     # in that we use Hankel/Toeplitz matrices formed from pre-estimated autocorrelation sequences (which may be pre-regularized).
     # However, in some of our manipulations we follow chapter 13 of LP. For example, we normalize the larger Hankel matrix and obtain 
     # shifted Hankel matrices and shifted coherent factorizations by truncating this larger Hankel matrix appropriately.
-    def get_predictor_space(self, y, T, truncated_order):
+    def get_predictor_space(self, y, T, truncation_order):
 
         N = y.shape[0]
         m = y.shape[1]
 
         # Return the autocorrelation sequence from 0 to 2t + 1
-        ccm = estimate_autocorrelation(y, 2*T + 1)
+        ccm = estimate_autocorrelation(y, 2*T + 2)
         # if maxent_extend:
         #     ccm = maxent_extend(y, ccm, 10 * ar_order)
 
@@ -122,9 +130,9 @@ class SubspaceIdentification():
         # SVD
         Ut1, St1, Vht1 = np.linalg.svd(Hnorm)
         # Balanced truncation
-        St1 = np.diag(St1[0:truncated_order])
-        Ut1 = Ut[:, 0:St1.shape[0]]
-        Vht1 = Vht[0:St1.shape[0], :]
+        St1 = np.diag(St1[0:truncation_order])
+        Ut1 = Ut1[:, 0:St1.shape[0]]
+        Vht1 = Vht1[0:St1.shape[0], :]
 
         # Obtain the cholesky factors of length T by truncating the larger ones. For data generated
         # from a rational system, this is basically the same thing
@@ -156,8 +164,13 @@ class SubspaceIdentification():
         zt = np.array([Sigmatbar.T @ np.linalg.inv(Lmt) @ ymt[j, :] for j in range(ymt.shape[0])])
         zt1 = np.array([Sigmat1bar.T @ np.linalg.inv(Lmt1) @ ymt1[j, :] for j in range(ymt1.shape[0])])
 
+        # Chop off the first sample
+        zt = zt[1:]
+
         zbart = np.array([Sigmatbar.T @ np.linalg.inv(Lpt) @ ypt[j, :] for j in range(ypt.shape[0])])
         zbart1 = np.array([Sigmat1bar.T @ np.linalg.inv(Lpt1) @ ypt1[j, :] for j in range(ypt1.shape[0])])
+
+        zbart = zbart[1:]
 
         return zt, zt1, zbart, zbart1
 

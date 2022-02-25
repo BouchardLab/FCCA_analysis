@@ -5,7 +5,7 @@ import pdb
 from sklearn.linear_model import LinearRegression
 #from sklearn.linear_model import RidgeRegression
 
-from dca.cov_util import form_lag_matrix
+from dca.cov_util import form_lag_matrix, calc_cross_cov_mats_from_data
 from neurosim.utils.riccati import discrete_generalized_riccati
 from cov_estimation import estimate_autocorrelation 
 
@@ -98,7 +98,8 @@ class SubspaceIdentification():
         m = y.shape[1]
 
         # Return the autocorrelation sequence from 0 to 2t + 1
-        ccm = estimate_autocorrelation(y, 2*T + 2)
+#        ccm = estimate_autocorrelation(y, 2*T + 2)
+        ccm = calc_cross_cov_mats_from_data(y, 2*T + 2)
         # if maxent_extend:
         #     ccm = maxent_extend(y, ccm, 10 * ar_order)
 
@@ -171,6 +172,9 @@ class SubspaceIdentification():
         zbart1 = np.array([Sigmat1bar.T @ np.linalg.inv(Lpt1) @ ypt1[j, :] for j in range(ypt1.shape[0])])
 
         zbart = zbart[1:]
+
+        pdb.set_trace()
+        # Assert finite interval balancing
 
         return zt, zt1, zbart, zbart1
 

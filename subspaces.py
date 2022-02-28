@@ -116,7 +116,8 @@ class OLSEstimator():
         self.linregressor = LinearRegression(fit_intercept=False)
 
     def fit(self, y, zt, zt1, zbart, zbart1):
-        A = self.linregressor.fit(zt, zt1).coef_
+        A1 = 1/(zt1.shape[0]) * zt1.T @ zt @ np.linalg.inv(np.cov(zt.T))
+        A2 = self.linregressor.fit(zt, zt1).coef_
         C = self.linregressor.fit(zt, y[self.T:]).coef_
 
         # Separate A.T and Cbar
@@ -175,7 +176,7 @@ class SubspaceIdentification():
         # Estimate *biased* autocorrelation in line with eq. 13.24 and 13.30. Do *not* toeplitzify in the way that DCA does it
         ypt1 = form_lag_matrix(y, T + 1).T
         ymt1 = flip_blocks(ypt1, T + 1)
-
+        
         ypt = form_lag_matrix(y, T).T
         ymt = flip_blocks(ypt, T)
 
@@ -215,7 +216,6 @@ class SubspaceIdentification():
         Hnorm = np.linalg.inv(Lpt1) @ Hlarge @ np.linalg.inv(Lmt1).T
         # SVD
         Ut1, St1, Vht1 = np.linalg.svd(Hnorm)
-                
         # Balanced truncation
         St1 = np.diag(St1[0:truncation_order])
         Ut1 = Ut1[:, 0:St1.shape[0]]
@@ -226,9 +226,9 @@ class SubspaceIdentification():
         Lmt = Lmt1[:-m, :-m]
         Lpt = Lpt1[:-m, :-m]
 
-        # # Normalized shifted Hankel matrices. Note the typo in 12.124 (missing inverse on Lpt)
-        # Htt1norm = np.linalg.inv(Lpt) @ Htt1 @ np.linalg.inv(Lmt1).T
-        # Ht1tnorm = np.linalg.inv(Lpt1) @ Ht1t @ np.linalg.inv(Lmt).T
+        # # # Normalized shifted Hankel matrices. Note the typo in 12.124 (missing inverse on Lpt)
+        # # Htt1norm = np.linalg.inv(Lpt) @ Htt1 @ np.linalg.inv(Lmt1).T
+        # # Ht1tnorm = np.linalg.inv(Lpt1) @ Ht1t @ np.linalg.inv(Lmt).T
 
         # Constructability/Observability Operators
         Sigmat1 = Ut1 @ scipy.linalg.sqrtm(St1)
@@ -244,8 +244,8 @@ class SubspaceIdentification():
         # Chop off the last sample
         zt = zt[:, :-1]
 
-        zbart = Sigmatbar.T @ np.linalg.inv(Lpt) @ ypt
-        zbart1 = Sigmat1bar.T @ np.linalg.inv(Lpt1) @ ypt1
+        zbart = Sigmat.T @ np.linalg.inv(Lpt) @ ypt
+        zbart1 = Sigmat1.T @ np.linalg.inv(Lpt1) @ ypt1
 
         # Chop off the first sample
         zbart = zbart[:, 1:]
@@ -256,8 +256,6 @@ class SubspaceIdentification():
         # Assert finite interval balancing
         assert(np.allclose(cov1, cov2, atol=1e-2))
         assert(np.allclose(np.diag(cov1), np.diag(St1), atol=1e-2))
-
-        pdb.set_trace()
 
         return zt.T, zt1.T, zbart.T, zbart1.T
 

@@ -1,10 +1,11 @@
+import quadprog
 import numpy as np
 from numpy.lib.stride_tricks import as_strided
 import scipy 
 import pdb
 
 from sklearn.linear_model import LinearRegression
-#from sklearn.linear_model import RidgeRegression
+from sklearn.linear_model import RidgeCV
 
 from neurosim.utils.riccati import discrete_generalized_riccati
 from cov_estimation import estimate_autocorrelation 
@@ -107,37 +108,199 @@ def gen_toeplitz_from_blocks(blocks, order=None):
     toeplitz_blocks = [[toeplitz_block_index(i - j) for j in range(order)] for i in range(order)]
     T2 = np.block(toeplitz_blocks)
 
-    return T1, T2
+    return T1, T2    
+
+# Calculate the innovation covariance using the forward Kalman filter
+def filter_log_likelihood(y, A, C , Cbar):
+
+    L0 = np.cov(y, rowvar=False)
+
+    # Initalize the state covariance at 0 and propagate the Riccati equation
+    P = np.zeros(A.shape[0])
+    
+    # Innovation covariance
+    SigmaE = np.zeros((y.shape[0],) + P.shape)
+    # Innovations
+    e = np.zeros(y.shape)
+
+    # Initialization
+    e[0, :] = y[0, :]
+    SigmaE[0] = L0
+
+    xhat = np.zeros(A.shape[0])
+
+    # Propagation
+    for i in range(1, y.shape[0]):
+
+        P = discrete_generalized_riccati(P, A, C, Cbar, L0)
+        R = L0 - C @ P @ C.T
+        assert(np.all(np.linalg.eigvals(R) >= 0))
+
+        K = (Cbar - A @ P @ C.T) @ np.linalg.pinv(R)
+        SigmaE[i] = R
+        e[i] = y[i] - C @ xhat
+        xhat = A @ xhat + K @ e[i]
+
+    T = y.shape[0]
+
+    # Note the expression given by Hannan and Deistler is the *negative* of the log likelihood
+    return -1/(2) * sum([np.linalg.slogdet(SigmaE[j])[1] for j in range(T)]) - 1/(2) * sum([e[j] @ np.linalg.pinv(SigmaE[j]) @ e[j] for j in range(T)])
+
+# For number of parameters in a state space model, see: Uniquely identifiable state-space and ARMA parametrizations for multivariable linear systems
+def BIC(ll, n_samples, state_dim, obs_dim):
+    #1/T normalization assumes the likelihood 
+    return -2*ll + np.log(n_samples) * (2 * state_dim * obs_dim)
+
+def AIC(ll, n_samples, state_dim, obs_dim):
+    return -2 * ll + 2 * (2 * state_dim * obs_dim)
+
+## These criteria are described here: Order estimation for subspace methods
+# They rely on the canonical correlation coefficients
+def NIC_BIC(cc, n_samples, state_dim, obs_dim):
+    np.log(n_samples) * 
+def NIC_AIC(cc, n_samples, state_dim, obs_dim):
+
+def SVIC_BIC(cc, n_samples, state_dim, obs_dim):
+
+def SVIC_AIC(cc, n_samples, state_dim, obs_dim):
+
 
 class OLSEstimator():
 
     def __init__(self, T):
         self.T = T
-        self.linregressor = LinearRegression(fit_intercept=False)
 
-    def fit(self, y, zt, zt1, zbart, zbart1):
-        A1 = 1/(zt1.shape[0]) * zt1.T @ zt @ np.linalg.inv(np.cov(zt.T))
-        A2 = self.linregressor.fit(zt, zt1).coef_
-        C = self.linregressor.fit(zt, y[self.T:]).coef_
+        self.fwd_lr = LinearRegression(fit_intercept=False)
+        self.rev_lr = LinearRegression(fit_intercept=False)
+        self.fwd_obs_lr = LinearRegression(fit_intercept=False)
+        self.rev_obs_lr = LinearRegression(fit_intercept=False)
 
-        # Separate A.T and Cbar
-        At = self.linregressor.fit(zbart, zbart1).coef_
-        Cbar = self.linregressor.fit(zbart, y[self.T:]).coef_
+    def fit(self, y, Xt, Xt1, Xrevt, Xrevt1):
+
+        # Regression of predictor variables
+        A = self.fwd_lr.fit(Xt.T, Xt1.T).coef_
+        # Be careful to match indices here
+        C = self.fwd_obs_lr.fit(Xt.T, y[self.T-1:-1, :]).coef_
+        # Same thing but backwards in time
+        At = self.rev_lr.fit(Xrevt.T, Xrevt1.T).coef_
+        Cbar = self.rev_obs_lr.fit(Xrevt.T, y[1:-self.T+1, :]).coef_    
 
         return A, At, C, Cbar
 
+
 class RidgeEstimator():
-    pass
+
+    def __init__(self, T):
+        self.T = T
+
+        self.fwd_lr = RidgeCV(alphas=np.logspace(-2, 1, num=10), fit_intercept=False)
+        self.rev_lr = RidgeCV(alphas=np.logspace(-2, 1, num=10), fit_intercept=False)
+        self.fwd_obs_lr = RidgeCV(alphas=np.logspace(-2, 1, num=10), fit_intercept=False)
+        self.rev_obs_lr = RidgeCV(alphas=np.logspace(-2, 1, num=10), fit_intercept=False)
+
+
+    def fit(self, y, Xt, Xt1, Xrevt, Xrevt1):
+
+        # Regression of predictor variables
+        A = self.fwd_lr.fit(Xt.T, Xt1.T).coef_
+        # Be careful to match indices here
+        C = self.fwd_obs_lr.fit(Xt.T, y[self.T-1:-1, :]).coef_
+        # Same thing but backwards in time
+        At = self.rev_lr.fit(Xrevt.T, Xrevt1.T).coef_
+        Cbar = self.rev_obs_lr.fit(Xrevt.T, y[1:-self.T+1, :]).coef_    
+
+        return A, At, C, Cbar
+
+
+
 # Method of Siddiqi et. al.
 class IteratedStableEstimator():
-    pass
+
+    def __init__(self, T, interp_iter=10):
+        self.T = T
+        self.interp_iter = interp_iter
+
+        # The observational regressions are unchanged
+        self.fwd_obs_lr = RidgeCV(alphas=np.logspace(-2, 1, num=10), fit_intercept=False)
+        self.rev_obs_lr = RidgeCV(alphas=np.logspace(-2, 1, num=10), fit_intercept=False)
+
+        # Use these as initial estimates
+        self.fwd_lr = LinearRegression(fit_intercept=False)
+        self.rev_lr = LinearRegression(fit_intercept=False)
+
+        self.check_stability = lambda A: np.all(np.abs(np.linalg.eigvals(A)) < 1)
+
+    def solve_qp(self, A, x0, x1):
+        # Setup the quadprog    
+        P = 0.5 * np.kron(np.eye(A.shape[0]), x0 @ x1.T)
+        P = P.astype(np.double)
+        # This coincides with the vectorize operator
+        q = 0.5 * (x0 @ x1.T).flatten('F')
+        q = q.astype(np.double)
+
+        U, S, Vh = np.linalg.svd(A)
+        # Constraint vector
+        G = -1*np.outer(U[:, 0], Vh[0, :]).flatten('F')[:, np.newaxis]
+        G = G.astype(np.double)
+        h = -1*np.array([1]).astype(np.double)
+        # Solve QP 
+        a = quadprog.solve_qp(P, q, G, h, 0)[0]
+
+        A0 = A            
+        A1 = np.reshape(a, A.shape, order='F')
+
+        while not self.check_stability(A1):
+            # Append to constraints
+            U, S, Vh = np.linalg.svd(A1)
+            g = -1*np.outer(U[:, 0], Vh[0, :]).flatten('F')[:, np.newaxis]
+            G = np.hstack([G, g]).astype(np.double)
+            h = -1*np.ones(G.shape[1]).astype(np.double)               
+            # Solve QP 
+            a = quadprog.solve_qp(P, q, G, h, 0)[0]
+            A0 = A1
+            A1 = np.reshape(a, A.shape, order='F')
+
+        # Binary search to the stability boundary
+        gamma = 0.5
+        for i in range(self.interp_iter):    
+            A_ = gamma * A1 + (1 - gamma) * A0
+            if self.check_stability(A_):
+                # Bring A_ closer to A0 (gamma -> 0)
+                gamma = gamma - 0.5**(i + 1)
+            else:
+                # Bring A_ closer to A1 (gamma -> 1)
+                gamma = gamma + 0.5**(i + 1)
+
+        return A_
+
+    def fit(self, y, Xt, Xt1, Xrevt, Xrevt1):
+
+        C = self.fwd_obs_lr.fit(Xt.T, y[self.T-1:-1, :]).coef_
+        Cbar = self.rev_obs_lr.fit(Xrevt.T, y[1:-self.T+1, :]).coef_    
+
+        # Solve both forward and reverse time dynamics
+
+        # First, do ordinary OLS and check for stability. If stable, then return
+        A = self.fwd_lr.fit(Xt.T, Xt1.T).coef_
+        At = self.rev_lr.fit(Xrevt.T, Xrevt1.T).coef_
+
+        if not self.check_stability(A):
+            A = self.solve_qp(A, Xt, Xt1)
+        if not self.check_stability(At):
+            At = self.solve_qp(At, Xrevt, Xrevt1)
+
+        return A, At, C, Cbar
 
 class SubspaceIdentification():
 
-    def __init__(self, T=3, estimator=OLSEstimator):
+    def __init__(self, T=3, estimator=OLSEstimator, score='BIC'):
 
         self.T = T
-        self.estimator = OLSEstimator(T)
+        self.estimator = estimator(T)
+        if score == 'BIC':
+            self.score_fn = BIC
+        elif score == 'AIC':
+            self.score_fn = AIC
 
     def identify(self, y, T=None, min_order=None, max_order=None):
         
@@ -150,112 +313,71 @@ class SubspaceIdentification():
         
         orders = np.arange(min_order, max_order)
         scores = np.zeros(orders.size)
-       
+
+        # Should have an option to "not Toeplitzify"
+        ccm = estimate_autocorrelation(y, 2*T + 2)
+
         for i, order in enumerate(orders):
             # Factorize
-            zt, zt1, zbart, zbart1 = self.get_predictor_space(y, T, int(order))
+            zt, zt1, zbart, zbart1 = self.get_predictor_space(y, ccm, T, int(order))
             # Identify
             A, At, C, Cbar = self.estimator.fit(y, zt, zt1, zbart, zbart1)
-            # # Predict
-            # ypred = self.estimator.predict()
             # # Score
-            # scores[i] = self.score(y, ypred)
+            ll = filter_log_likelihood(A, C, Cbar)
+            scores[i] = self.score_fn(ll, y.shape[0], A.shape[0], C.shape[0])
+
+        order = orders[np.argmin(scores)]
+        # Re-estimate
+        zt, zt1, zbart, zbart1 = self.get_predictor_space(y, T, int(order))
+        A, At, C, Cbar = self.estimator.fit(y, zt, zt1, zbart, zbart1)
+
         return A, At, C, Cbar
 
+    def hankel_ccm(self, ccm, T):
+        H1 = gen_hankel_from_blocks(ccm, order1=T + 1, order2=T + 1)
 
-    # Identify a predictor space from autocovariance sequence. Conceptually, we follow chapter 12 of Lindquist and Picci
-    # in that we use Hankel/Toeplitz matrices formed from pre-estimated autocorrelation sequences (which may be pre-regularized).
-    # However, in some of our manipulations we follow chapter 13 of LP. For example, we normalize the larger Hankel matrix and obtain 
-    # shifted Hankel matrices and shifted coherent factorizations by truncating this larger Hankel matrix appropriately.
-    def get_predictor_space(self, y, T, truncation_order):
 
-        M = y.shape[0]
+        H1norm = np.linalg.inv(Lp1) @ H1 @ np.linalg.inv(Lm1).T
+        Ut1, St1, Vht1 = np.linalg.svd(H1norm)
+
+
+    # Follow chapter 13 of LP except for in how we form the autocorrelation matrices
+    def get_predictor_space(self, y, ccm, T, truncation_order):
+
         m = y.shape[1]
-        N = M - 2 * T - 2
 
-        # Estimate *biased* autocorrelation in line with eq. 13.24 and 13.30. Do *not* toeplitzify in the way that DCA does it
+        # T + 1 quantities
+        Tm1, Tp1 = gen_toeplitz_from_blocks(ccm, order=T + 1)
+        Lm1 = np.linalg.cholesky(Tm1)
+        Lp1 = np.linalg.cholesky(Tp1)
+
+        H1 = gen_hankel_from_blocks(ccm, order1=T + 1, order2=T + 1)
+        H1norm = np.linalg.inv(Lp1) @ H1 @ np.linalg.inv(Lm1).T
+        Ut1, St1, Vht1 = np.linalg.svd(H1norm)
+
+        St1 = np.diag(St1[0:St.shape[0]])
+        Ut1 = Ut1[:, 0:St.shape[0]]
+        Vht1 = Vht1[0:St.shape[0], :]
+
+        Sigmat1 = Lp1 @ Ut1 @ scipy.linalg.sqrtm(St1)
+        Sigmabart1 = Lm1 @ Vht1.T @ scipy.linalg.sqrtm(St1) 
+        
+        Sigmat = Sigmat1[:-m, :] 
+        Sigmabart = Sigmabart1[:-m, :]
+
+        Hnormtt1 = H1norm[:-m, :]
+
+        # Form the predictor spaces
         ypt1 = form_lag_matrix(y, T + 1).T
         ymt1 = flip_blocks(ypt1, T + 1)
-        
-        ypt = form_lag_matrix(y, T).T
-        ymt = flip_blocks(ypt, T)
 
-        Hlarge = 1/(N + 1) * np.dot(ypt1[:, T+1:], ymt1[:, :N + 1].T)
-        Tmt1 = 1/(N + 1) * np.dot(ymt1[:, :N+1], ymt1[:, :N+1].T)
-        Tpt1 = 1/(N + 1) * np.dot(ypt1[:, T+1:], ypt1[:, T+1:].T)
+        Xt = Sigmabart.T @ np.linalg.inv(Tm) @ ymt1[m:, :]
+        Xt1 = Sigmabart1.T @ np.linalg.inv(Tm1) @ ymt1
 
-# #         # Return the autocorrelation sequence from 0 to 2t + 1
-# # #        ccm = estimate_autocorrelation(y, 2*T + 2)
-# #         ccm = calc_cross_cov_mats_from_data(y, 2*T + 2)
-# #         # if maxent_extend:
-# #         #     ccm = maxent_extend(y, ccm, 10 * ar_order)
+        Xrevt = Sigmat.T @ np.linalg.inv(Tp) @ ypt1[m:, :]
+        Xrevt1 = Sigmat1.T @ np.linalg.inv(Tp1) @ ypt1
 
-        # Toeplitz matrices for normalization
-#        Tmt1, Tpt1 = gen_toeplitz_from_blocks(ccm, order=T+1)
+        return Xt, Xt1, Xrevt, Xrevt1
 
-#         # Generate Hankel matrix with lambda_1 in the top left corner and 2T in the bottom right corner
-#         Hlarge = gen_hankel_from_blocks(ccm, order1=T + 1, order2=T + 1)
-        
-        # Chopping off the last row and column
-        Htt = Hlarge[:-m, :-m]
-        # Shifted Hankel matrices
-        Htt1 = Hlarge[:-m, :]
-        Ht1t = Hlarge[:, :-m]
-
-        try:
-            Lmt1 = np.linalg.cholesky(Tmt1)
-            Lpt1 = np.linalg.cholesky(Tpt1)
-        except np.linalg.LinAlgError:
-            # Add white noise
-            ccm[0] += 1e-4 * np.eye(ccm.shape[0])
-            Tmt1, Tpt1 = gen_toeplitz_from_blocks(ccm, order=T+1)
-            Lmt1 = np.linalg.cholesky(Tmt1)
-            Lpt1 = np.linalg.cholesky(Tpt1)
-
-        # Normalized Hankel matrix
-        Hnorm = np.linalg.inv(Lpt1) @ Hlarge @ np.linalg.inv(Lmt1).T
-        # SVD
-        Ut1, St1, Vht1 = np.linalg.svd(Hnorm)
-        # Balanced truncation
-        St1 = np.diag(St1[0:truncation_order])
-        Ut1 = Ut1[:, 0:St1.shape[0]]
-        Vht1 = Vht1[0:St1.shape[0], :]
-
-        # # Obtain the cholesky factors of length T by truncating the larger ones. For data generated
-        # # from a rational system, this is basically the same thing
-        Lmt = Lmt1[:-m, :-m]
-        Lpt = Lpt1[:-m, :-m]
-
-        # # # Normalized shifted Hankel matrices. Note the typo in 12.124 (missing inverse on Lpt)
-        # # Htt1norm = np.linalg.inv(Lpt) @ Htt1 @ np.linalg.inv(Lmt1).T
-        # # Ht1tnorm = np.linalg.inv(Lpt1) @ Ht1t @ np.linalg.inv(Lmt).T
-
-        # Constructability/Observability Operators
-        Sigmat1 = Ut1 @ scipy.linalg.sqrtm(St1)
-        Sigmat1bar = Vht1.T @ scipy.linalg.sqrtm(St1)
-
-        # Truncate
-        Sigmat = Sigmat1[m:, :]
-        Sigmatbar = Sigmat1bar[m:, :]
-
-        zt = Sigmatbar.T @ np.linalg.inv(Lmt) @ ymt
-        zt1 = Sigmat1bar.T @ np.linalg.inv(Lmt1) @ ymt1
-
-        # Chop off the last sample
-        zt = zt[:, :-1]
-
-        zbart = Sigmat.T @ np.linalg.inv(Lpt) @ ypt
-        zbart1 = Sigmat1.T @ np.linalg.inv(Lpt1) @ ypt1
-
-        # Chop off the first sample
-        zbart = zbart[:, 1:]
-
-        cov1 = np.cov(zt1)
-        cov2 = np.cov(zbart1)
-
-        # Assert finite interval balancing
-        assert(np.allclose(cov1, cov2, atol=1e-2))
-        assert(np.allclose(np.diag(cov1), np.diag(St1), atol=1e-2))
-
-        return zt.T, zt1.T, zbart.T, zbart1.T
-
+class CVSubspaceIdentification():
+    pass

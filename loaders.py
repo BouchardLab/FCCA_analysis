@@ -429,7 +429,6 @@ def load_peanut(fpath, epoch, spike_threshold, bin_width=25, boxcox=0.5,
     bins = np.linspace(0, T, int(T//bin_width))
 
     spike_rates = np.zeros((bins.size - 1, len(spike_times)))
-
     for i in range(len(spike_times)):
         # translate to 0
         spike_times[i] -= t[0]
@@ -611,8 +610,8 @@ def location_bin_peanut(fpath, loc_file, epoch, spike_threshold=100, sigma = 2):
 
     return occupation_normed_rates, transition_bins
 
-def load_shenoy_large(path, bin_width=50, boxcox=0.5, filter_fn='none', filter_kwargs={}, spike_threshold=100,
-                      trial_threshold=0.5, std_behavior=False, location='M1', use_go_cue=False):
+def load_shenoy_large(path, bin_width=50, boxcox=0.5, trialize=False, filter_fn='none', filter_kwargs={}, spike_threshold=100,
+                      trial_threshold=0.5, std_behavior=False, location='M1', interval='full'):
 
     # Convert bin width to s
     bin_width /= 1000
@@ -622,6 +621,14 @@ def load_shenoy_large(path, bin_width=50, boxcox=0.5, filter_fn='none', filter_k
 
     # Get successful trial indices
     valid_trials = np.nonzero(nwbfile_in.trials.is_successful[:])[0]
+
+    # Need to restrict to trials where there is a non-zero delay period prior to go cue
+    if interval == 'before_go':
+        valid_trials_ = []
+        for trial in valid_trials:
+            if nwbfile_in.trials.go_cue_time[trial] - nwbfile_in.trials.start_time[trial] > 2 * bin_width:
+                valid_trials_.append(trial)
+        valid_trials = np.array(valid_trials_)
 
     print('%d valid trials' % len(valid_trials))
 
@@ -634,59 +641,88 @@ def load_shenoy_large(path, bin_width=50, boxcox=0.5, filter_fn='none', filter_k
 
     print('%d valid  units' % len(valid_units))
 
-    # Trialize spike_times
     raw_spike_times = np.array(nwbfile_in.units.spike_times_index)
-    spike_times = np.zeros((len(valid_trials), len(valid_units)), dtype=np.object)
-    T = np.zeros((valid_trials.size, 2))
-    print('Trializing spike times')
-    for j, unit in tqdm(enumerate(valid_units)):
-        end_idx = 0
-        for i, trial in enumerate(valid_trials):
-            if use_go_cue:
-                T[i, 0] = nwbfile_in.trials.go_cue_time[trial]
-            else:
-                T[i, 0] = nwbfile_in.trials.start_time[trial]
-            T[i, 1] = nwbfile_in.trials.stop_time[trial]
+    if trialize:
 
-            windowed_spike_times, end_idx = window_spikes(raw_spike_times[unit], 
-                                                          T[i][0], T[i][1], end_idx)
-            spike_times[i, j] = windowed_spike_times
-        
+        # Trialize spike_times
+        spike_times = np.zeros((len(valid_trials), len(valid_units)), dtype=np.object)
+        T = np.zeros((valid_trials.size, 2))
+        print('Trializing spike times')
+        for j, unit in tqdm(enumerate(valid_units)):
+            end_idx = 0
+            for i, trial in enumerate(valid_trials):
+                if interval == 'full':
+                    T[i, 0] = nwbfile_in.trials.start_time[trial]
+                    T[i, 1] = nwbfile_in.trials.stop_time[trial]
+                elif interval == 'before_go':
+                    T[i, 0] = nwbfile_in.trials.start_time[trial]
+                    T[i, 1] = nwbfile_in.trials.go_cue_time[trial]
+                elif interval == 'after_go':
+                    T[i, 0] = nwbfile_in.trials.go_cue_time[trial]
+                    T[i, 1] = nwbfile_in.trials.stop_time[trial]
+                else:
+                    raise ValueError('Invalid interval, please specify full, before_go, or after_go')
+                windowed_spike_times, end_idx = window_spikes(raw_spike_times[unit], 
+                                                            T[i][0], T[i][1], end_idx)
+                spike_times[i, j] = windowed_spike_times
+
+        T = np.squeeze(np.diff(T, axis=1))
+    else:
+        spike_times = np.zeros((1, len(valid_units)), dtype=np.object)
+        for j, unit in enumerate(valid_units):
+            spike_times[0, j] = raw_spike_times[unit]
+        T = nwbfile_in.units.obs_intervals[0][1]
+
     # Filter spikes
-    T = np.squeeze(np.diff(T, axis=1))
-
     spike_rates = postprocess_spikes(spike_times, T, bin_width, boxcox, filter_fn, filter_kwargs,
                                      spike_threshold)
 
     dat = {}
-    dat['target_pos'] = np.array([nwbfile_in.trials.target_pos_index[trial] for trial in valid_trials])
+
+    if trialize:
+        dat['target_pos'] = np.array([nwbfile_in.trials.target_pos_index[trial] for trial in valid_trials])
+    else:
+        dat['target_pos'] = np.array([nwbfile_in.trials.target_pos_index])
     dat['spike_rates'] = spike_rates
 
     # Return go_cue_times relative to start_time
     dat['go_times'] = nwbfile_in.trials.go_cue_time[valid_trials] - nwbfile_in.trials.start_time[valid_trials]
 
-    # Trialize behavior
-    cursor = np.zeros(len(valid_trials), dtype=np.object) 
-    hand = np.zeros(len(valid_trials), dtype=np.object) 
-
     t = nwbfile_in.processing['behavior'].data_interfaces['Position'].spatial_series['Cursor'].timestamps
 
-    print('Trializing Behavior')
-    for i, trial in tqdm(enumerate(valid_trials)):
+    if trialize:
+        # Trialize behavior
+        cursor = np.zeros(len(valid_trials), dtype=np.object) 
+        hand = np.zeros(len(valid_trials), dtype=np.object) 
 
-        if use_go_cue:
-            start_index = np.argmax(t > nwbfile_in.trials.go_cue_time[trial])
-        else:        
-            start_index = np.argmax(t > nwbfile_in.trials.start_time[trial])
+        t = nwbfile_in.processing['behavior'].data_interfaces['Position'].spatial_series['Cursor'].timestamps
 
-        end_index = np.argmin(t < nwbfile_in.trials.stop_time[trial])
+        print('Trializing Behavior')
+        for i, trial in tqdm(enumerate(valid_trials)):
+            if interval == 'full':
+                start_index = np.argmax(t > nwbfile_in.trials.start_time[trial])
+                end_index = np.argmin(t < nwbfile_in.trials.stop_time[trial])
+            elif interval == 'before_go':
+                start_index = np.argmax(t > nwbfile_in.trials.start_time[trial])
+                end_index = np.argmin(t < nwbfile_in.trials.go_cue_time[trial])
+            elif interval == 'after_go':
+                start_index = np.argmax(t > nwbfile_in.trials.go_cue_time[trial])
+                end_index = np.argmin(t < nwbfile_in.trials.stop_time[trial])
+            else:
+                raise ValueError('Invalid interval, please specify full, before_go, or after_go')
+            cursor[i] = nwbfile_in.processing['behavior'].data_interfaces['Position'].spatial_series['Cursor'].data[start_index:end_index]
+            hand[i] = nwbfile_in.processing['behavior'].data_interfaces['Position'].spatial_series['Hand'].data[start_index:end_index]
 
-        cursor[i] = nwbfile_in.processing['behavior'].data_interfaces['Position'].spatial_series['Cursor'].data[start_index:end_index]
-        hand[i] = nwbfile_in.processing['behavior'].data_interfaces['Position'].spatial_series['Hand'].data[start_index:end_index]
+        # Align behavior    
+        cursor_interp = np.array([align_behavior(c, T[i], bin_width) for i, c in enumerate(cursor)], dtype=np.object)
+        hand_interp = np.array([align_behavior(h, T[i], bin_width) for i, h in enumerate(hand)], dtype=np.object)
 
-    # Align behavior    
-    cursor_interp = np.array([align_behavior(c, T[i], bin_width) for i, c in enumerate(cursor)], dtype=np.object)
-    hand_interp = np.array([align_behavior(h, T[i], bin_width) for i, h in enumerate(hand)], dtype=np.object)
+    else:
+        cursor = nwbfile_in.processing['behavior'].data_interfaces['Position'].spatial_series['Cursor'].data
+        hand = nwbfile_in.processing['behavior'].data_interfaces['Position'].spatial_series['Hand'].data
+
+        cursor_interp = align_behavior(cursor, T, bin_width)
+        hand_interp = align_behavior(cursor, T, bin_width)
 
     dat['behavior'] = cursor_interp
     dat['behavior_3D'] = hand_interp

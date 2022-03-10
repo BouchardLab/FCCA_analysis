@@ -62,3 +62,39 @@ def riccati_solve(*args, type='discrete_generalized', tol=1e-3, Pinit=None, max_
         p = pp
         iter_ += 1
     return p
+
+def riccati_array(Psqrt, F, H, Q):
+
+    # Measurement update
+    M = scipy.linalg.sqrtm()
+
+    # Time update
+\
+
+
+# CKMS Array algorithm (see chapter 13 of Kailath). Implementation currently only works for initial condition 0
+# Alphabet Translation:
+# Rsqrt -> sqrt of L0 - C P Ct
+# K -> Kalman gain
+# H -> C
+# F -> A
+# L -> square root of P_{i + 1} - P_i
+def CKMS_Array(Re, K, L, F, H):
+
+    Rsqrt = scipy.linalg.sqrtm(Re)
+    M = np.block([[Rsqrt, H @ L], [K @ np.linalg.pinv(Rsqrt), F @ L]])
+
+
+    # QR Factorize
+    Q_, R_ = scipy.linalg.qr(M)
+
+    # Select out the blocks of the appropriate sizes
+    R_ = R_.T
+    Rsqrt = R_[0:Rsqrt.shape[0], 0:Rsqrt.shape[1]]
+    Kbar = R_[Rsqrt.shape[0]:, 0:K.shape[1]]
+    L = R_[Rsqrt.shape[0]:, K.shape[1]:]
+
+    Re = Rsqrt @ Rsqrt
+    K = Kbar @ Rsqrt
+
+    return Re, K, L

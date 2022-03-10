@@ -10,7 +10,7 @@ import pdb
 from sklearn.linear_model import LinearRegression
 from sklearn.linear_model import RidgeCV
 
-from neurosim.utils.riccati import discrete_generalized_riccati, check_gdare
+from riccati import discrete_generalized_riccati, check_gdare
 from cov_estimation import estimate_autocorrelation 
 
 def form_lag_matrix(X, T, stride=1, stride_tricks=True, rng=None, writeable=False):
@@ -133,15 +133,32 @@ def filter_log_likelihood(y, A, C , Cbar, L0=None):
 
     xhat = np.zeros(A.shape[0])
 
+    # Solve steady state, keep track of convergence - continuous iteration is not numerically stable
+    # scipy's requirements on hermiticity are quite stringent...
+    L0 = 0.5 * (L0 + L0.T)
+    Pinf = scipy.linalg.solve_discrete_are(A.T, C.T, np.zeros(A.shape), L0, s=Cbar.T)
+
     # Propagation
+    norm_diff = np.inf
+    tol = 1e-5
     for i in range(1, y.shape[0]):
-        P = discrete_generalized_riccati(P, A, C, Cbar, L0)
+        if norm_diff < tol:
+            P = Pinf
+        else:
+            P = discrete_generalized_riccati(P, A, C, Cbar, L0)
+            norm_diff = np.linalg.norm(P - Pinf)
+
         R = L0 - C @ P @ C.T
+
         # try:
         #     assert(np.all(np.linalg.eigvals(R) >= 0))
         # except:
         #     pdb.set_trace()
+        if np.any(np.isinf(P)) or np.any(np.isnan(P)):
+            pdb.set_trace()
+        
         K = (Cbar.T - A @ P @ C.T) @ np.linalg.pinv(R)
+        
         SigmaE[i] = R
         e[i] = y[i] - C @ xhat
         xhat = A @ xhat + K @ e[i]

@@ -139,14 +139,16 @@ def filter_log_likelihood(y, A, C , Cbar, L0=None):
     Pinf = scipy.linalg.solve_discrete_are(A.T, C.T, np.zeros(A.shape), L0, s=Cbar.T)
 
     # Propagation
-    norm_diff = np.inf
     tol = 1e-5
+    norm_diff_trace = []
     for i in range(1, y.shape[0]):
         if norm_diff < tol:
             P = Pinf
         else:
-            P = discrete_generalized_riccati(P, A, C, Cbar, L0)
-            norm_diff = np.linalg.norm(P - Pinf)
+            PP = discrete_generalized_riccati(P, A, C, Cbar, L0)
+            norm_diff = np.linalg.norm(P - PP)
+            norm_diff_trace.append(norm_diff)
+            P = PP
 
         R = L0 - C @ P @ C.T
 

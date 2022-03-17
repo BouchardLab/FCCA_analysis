@@ -6,12 +6,15 @@ import numpy as np
 from numpy.lib.stride_tricks import as_strided
 import scipy 
 import pdb
-
+import pickle
 from sklearn.linear_model import LinearRegression
 from sklearn.linear_model import RidgeCV
 
-from riccati import discrete_generalized_riccati, check_gdare
+from riccati import discrete_generalized_riccati, discrete_riccati, check_gdare
 from cov_estimation import estimate_autocorrelation 
+
+class RiccatiPSDError(Exception):
+    pass
 
 def form_lag_matrix(X, T, stride=1, stride_tricks=True, rng=None, writeable=False):
     """Form the data matrix with `T` lags.
@@ -113,63 +116,112 @@ def gen_toeplitz_from_blocks(blocks, order=None):
 
     return T1, T2    
 
+def check_riccati_ic(Pinf, P0, A, C, Re, Kinf):
+    O = scipy.linalg.solve_discrete_lyapunov((A - Kinf @ C).T, C.T @ Re @ C)
+    try:
+        Op2 = scipy.linalg.cholesky(O)
+    except:
+        pdb.set_trace()
+    eig = np.linalg.eigvals(np.eye(Pinf.shape[0]) + Op2.T @ (P0 - Pinf) @ Op2)
+
+    eig2 = np.linalg.eigvals(np.eye(Pinf.shape[0]) + (P0 - Pinf) @ O)
+
+    if np.all(eig > 0) and not np.any(np.isclose(eig2, 0)):
+        return True
+    else:
+        return False
+
+# Obtain remaining state space parameters from solution of the Riccati equation
+def factorize(A, C, Cbar, L0):
+    # scipy PSD Check is quite stringent
+    L0 = 0.5 * (L0 + L0.T)
+
+    Pinf = scipy.linalg.solve_discrete_are(A.T, -C.T, np.zeros(A.shape), -L0, s=Cbar.T)
+    assert(np.all(np.linalg.eigvals(Pinf)) > 0)
+    D = scipy.linalg.sqrtm(L0 - C @ Pinf @ C.T)
+    B = (Cbar.T - A @ Pinf @ C.T) @ np.linalg.inv(D)
+    return B, D
+
 # Calculate the innovation covariance using the forward Kalman filter
-def filter_log_likelihood(y, A, C , Cbar, L0=None):
+def filter_log_likelihood(y, A, C, Q, R, S):
 
-    if L0 is None:
-        L0 = np.cov(y, rowvar=False)
+    # Solve steady state, keep track of convergence - continuous iteration is not numerically stable
+    # scipy's requirements on hermiticity are quite stringent...
+    R = 0.5 * (R + R.T)
+    Pinf = scipy.linalg.solve_discrete_are(A.T, C.T, Q, R, s=S)
 
-    # Initalize the state covariance at 0 and propagate the Riccati equation
-    P = np.zeros(A.shape)
-    
+    if not np.all(np.linalg.eigvals(Pinf) > 0):
+        raise RiccatiPSDError
+
+    Re = R + C @ Pinf @ C.T 
+    Kinf = (A @ Pinf @ C.T + S) @ np.linalg.inv(Re)
+    # # Try initializing with the zero matrix. Check the condition Kailath 14.5.24 to make sure the 
+    # # iterations will converge. 
+    # P0 = scipy.linalg.solve_discrete_lyapunov(A, Q)
+    # print(check_riccati_ic(Pinf, P0, A, C, R + C @ Pinf @ C.T, Kinf))
+    #     # print('Lyapunov initialization failed!')
+    #     # # # Try random initialization
+    #     # # while not check_riccati_ic(Pinf, P0, A, C, R + C @ Pinf @ C.T, Kinf):
+    #     # #     P0 = np.random.uniform(1, 2, size=A.shape)
+    #     # if not check_riccati_ic(Pinf, P0, A, C, R + C @ Pinf @ C.T, Kinf):
+ 
+    #     # print('Lyapunov initialization succeeded!')
+
     # Innovation covariance
-    SigmaE = np.zeros((y.shape[0],) + L0.shape)
+    SigmaE = np.zeros((y.shape[0],) + R.shape)
     # Innovations
     e = np.zeros(y.shape)
 
     # Initialization
     e[0, :] = y[0, :]
-    SigmaE[0] = L0
-
+    SigmaE[0] = R
     xhat = np.zeros(A.shape[0])
-
-    # Solve steady state, keep track of convergence - continuous iteration is not numerically stable
-    # scipy's requirements on hermiticity are quite stringent...
-    L0 = 0.5 * (L0 + L0.T)
-    Pinf = scipy.linalg.solve_discrete_are(A.T, C.T, np.zeros(A.shape), L0, s=Cbar.T)
-
     # Propagation
-    tol = 1e-5
-    norm_diff_trace = []
-    for i in range(1, y.shape[0]):
-        if norm_diff < tol:
-            P = Pinf
-        else:
-            PP = discrete_generalized_riccati(P, A, C, Cbar, L0)
-            norm_diff = np.linalg.norm(P - PP)
-            norm_diff_trace.append(norm_diff)
-            P = PP
+    # tol = 1e-5
+    # norm_diff_trace = []
+    # norm_diff = np.inf
 
-        R = L0 - C @ P @ C.T
+    # What the fuck do youw ant from me you god damn whore
+
+    P = Pinf
+    K = Kinf
+    Re = R + C @ P @ C.T
+    for i in range(1, y.shape[0]):
+        # # if norm_diff < tol:
+        # #     P = Pinf
+        # # else:
+        # P = discrete_riccati(P, A, C, Q, R, S=S)
+        # # PP = discrete_generalized_riccati(P, A, C, Cbar, L0)
+        # # norm_diff = np.linalg.norm(P - PP)
+        # # norm_diff_trace.append(norm_diff)
+        # # P = PP
+
+        # Re = R + C @ P @ C.T
 
         # try:
-        #     assert(np.all(np.linalg.eigvals(R) >= 0))
+        #     assert(np.all(np.linalg.eigvals(Re) > 1e-8))
         # except:
+        #     with open('test_case5.dat', 'wb') as f:
+        #         f.write(pickle.dumps([A, C, Q, R, S, Pinf]))
         #     pdb.set_trace()
-        if np.any(np.isinf(P)) or np.any(np.isnan(P)):
-            pdb.set_trace()
+
+        # if np.any(np.isinf(P)) or np.any(np.isnan(P)):
+        #     pdb.set_trace()
         
-        K = (Cbar.T - A @ P @ C.T) @ np.linalg.pinv(R)
-        
-        SigmaE[i] = R
+        # K = (A @ P @ C.T + S) @ np.linalg.pinv(Re)
+        # if np.any(np.isinf(K)) or np.any(np.isnan(K)):
+        #     pdb.set_trace()
+
+        SigmaE[i] = Re
         e[i] = y[i] - C @ xhat
         xhat = A @ xhat + K @ e[i]
 
     T = y.shape[0]
 
     # Note the expression given by Hannan and Deistler is the *negative* of the log likelihood
-    return -1/(2) * sum([np.linalg.slogdet(SigmaE[j])[1] for j in range(T)]) - 1/(2) * sum([e[j] @ np.linalg.pinv(SigmaE[j]) @ e[j] for j in range(T)])\
-            -L0.shape[0]/2 * np.log(2 * np.pi)
+    # Throw away the first 10 samples
+    return -1/(2) * sum([np.linalg.slogdet(SigmaE[j])[1] for j in range(10, T)]) - 1/(2) * sum([e[j] @ np.linalg.pinv(SigmaE[j]) @ e[j] for j in range(10, T)])\
+            -R.shape[0]/2 * np.log(2 * np.pi)
 
 # For number of parameters in a state space model, see: Uniquely identifiable state-space and ARMA parametrizations for multivariable linear systems
 def BIC(ll, state_dim, obs_dim, n_samples):
@@ -193,6 +245,15 @@ def SVIC_AIC(cc, state_dim, obs_dim, **kwargs):
 score_fn_dict = {'BIC': BIC, 'AIC':AIC, 'NIC_BIC':NIC_BIC, 
                  'NIC_AIC':NIC_AIC, 'SVIC_BIC':SVIC_BIC, 'SVIC_AIC':SVIC_AIC}
 
+# Alternative positive realness check - Kailath 8.3.2
+# This ensures existsence of a psd asymptotic solution, but not uniquenesss (i.e. the psd solution is stabilizing)
+# One could additionally check generic controllability (stricter than stabilizability)
+def unit_controllability_test(A, C, Q, S, R):
+    Fs = A - S @ np.linalg.inv(R) @ C
+    Qs = Q - S @ np.linalg.inv(R) @ S.T
+    eig = np.linalg.eigvals(Fs)
+    return np.any(np.abs(np.abs(eig) - 1) < 1e-5)
+
 # Method 1: Use factorization of the residuals in OLS fits to
 # ensure Positive Real lemma is satisfied
 def pr_correction_method1(A, C, Cbar, L0, rho_A, rho_C):
@@ -201,23 +262,23 @@ def pr_correction_method1(A, C, Cbar, L0, rho_A, rho_C):
     S = 1/rho_A.shape[0] * rho_A.T @ rho_C
     R = np.cov(rho_C, rowvar=False)
 
-    try:
-        B = np.linalg.cholesky(Q)
-    except:
-        # Add some white noise
-        Q += 1e-8 * np.eye(Q.shape[0])
-        B = np.linalg.cholesky(Q)
-    try:
-        D = np.linalg.cholesky(R)
-    except:
-        R += 1e-8 * np.eye(R.shape[0])
-        D = np.linalg.cholesky(R)
+    # try:
+    #     B = np.linalg.cholesky(Q)
+    # except:
+    #     # Add some white noise
+    #     Q += 1e-8 * np.eye(Q.shape[0])
+    #     B = np.linalg.cholesky(Q)
+    # try:
+    #     D = np.linalg.cholesky(R)
+    # except:
+    #     R += 1e-8 * np.eye(R.shape[0])
+    #     D = np.linalg.cholesky(R)
 
     P = scipy.linalg.solve_discrete_lyapunov(A, Q)
     
     L0 = C @ P @ C.T + R
     Cbar = (A @ P @ C.T + S).T
-    return L0, B, D, Cbar
+    return L0, Cbar, Q, R, S
 
 # Solve a LMI so that modified Cbar (and possibly L0) satisfy
 # the Positive Real Lemma
@@ -400,11 +461,21 @@ class SubspaceIdentification():
 
             # Need to correct positive realness
             if not check_gdare(A, C, Cbar, ccm[0]):
-                L0, B, D, Cbar = pr_correction_method1(A, C, Cbar, ccm[0], rho_A, rho_C)
-                # Make sure it worked
-                assert(check_gdare(A, C, Cbar, L0))
+                print('pr correction employed')
+                L0, Cbar, Q, R, S = pr_correction_method1(A, C, Cbar, ccm[0], rho_A, rho_C)
+                # B, D = factorize(A, C, Cbar, L0)
             else:
                 L0 = ccm[0]
+                # Obtain B, D, Q, R from the riccati equation
+                B, D = factorize(A, C, Cbar, L0)
+                Q = B @ B.T
+                R = D @ D.T
+                S = B @ D.T
+            
+            if np.any(np.abs(np.linalg.eigvals(R)) < 1e-12):
+                print('R not > 0!')
+                R += 1e-6 * np.eye(R.shape[0])
+
             # Identify (reverse time)
             # At, Cbarrev, Crev = self.estimator.fit(y[1:-self.T+1,:], zbart, zbart1)
             # if not check_gdare(At, Cbbar, Cbar, ccm[0]):
@@ -412,7 +483,11 @@ class SubspaceIdentification():
                 
             # # Score
             if self.score in ['AIC', 'BIC']:
-                llfwd = filter_log_likelihood(y, A, C, Cbar, L0)
+                try:
+                    llfwd = filter_log_likelihood(y, A, C, Q, R, S)
+                except RiccatiPSDError:
+                    llfwd = np.inf
+                # llfwd2 = pykalman_filter_wrapper(y, A, C, Q, R, S)
                 # llrev = filter_log_likelihood(y, At.T, Crev, Cbarrev)
                 scores[i, 0] = score_fn_dict[self.score](llfwd, A.shape[0], C.shape[0], n_samples=y.shape[0])
                 # scores[i, 1] = score_fn_dict[self.score](llrev, A.shape[0], Crev.shape[0], n_samples=y.shape[0])
@@ -434,7 +509,7 @@ class SubspaceIdentification():
         A, C, Cbar, rho_A, rho_C = self.estimator.fit(y[self.T-1:-1, :], zt, zt1, return_residuals=True)
         # Correct
         if not check_gdare(A, C, Cbar, ccm[0]):
-            L0, B, D, Cbar = pr_correction_method1(A, C, Cbar, L0, rho_A, rho_C)
+            L0, Cbar, Q, R, S = pr_correction_method1(A, C, Cbar, L0, rho_A, rho_C)
         # else:
         #     pdb.set_trace()
         #     # # In reverse time:

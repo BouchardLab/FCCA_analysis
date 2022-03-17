@@ -3,6 +3,8 @@ import numpy as np
 import scipy
 from scipy.optimize import minimize
 import pdb
+from pyuoi.linear_model.var import VAR
+from subspaces import SubspaceIdentification, IteratedStableEstimator
 
 # Experiment with either pykalman or pylds implementations
 from pykalman.standard import (KalmanFilter, _filter, _smooth, _smooth_pair, _em_observation_matrix, 
@@ -36,7 +38,8 @@ def _em_stable_transition_matrix(Ainit, Pt, Pt1, Ptt1, lambda_A, T):
 
 class StableStateSpaceML():
 
-    def __init__(self, Ainit, Cinit, Qinit, Rinit, x0, Sigma0, tol, max_iter, lambda_A=1, rand_state=None, optimize_init_cond=True):
+    def __init__(self, init_strategy='SSID', tol=1e-2, max_iter=100, 
+                 lambda_A=1, rand_state=None, optimize_init_cond=True, **init_kwargs):
 
         # We do not currently allow for there to be correlation between Q and R
 
@@ -44,6 +47,48 @@ class StableStateSpaceML():
         self.max_iter = max_iter
         self.lambda_A = lambda_A
         self.optimize_init_cond = optimize_init_cond
+
+        if init_strategy not in ['PCA', 'SSID', 'manual']:
+            raise ValueError('Unknown initialization strategy specified.')
+
+        self.init_strategy = init_strategy
+
+    def fit(self, y, state_dim, **init_kwargs):
+
+        if self.init_strategy == 'manual':
+            Ainit = init_kwargs['Ainit']
+            Cinit = init_kwargs['Cinit']
+            Qinit = init_kwargs['Qinit']
+            Rinit = init_kwargs['Rinit']
+            x0 = init_kwargs['x0']
+            Sigma0 = init_kwargs['Sigma0']
+        elif self.init_strategy == 'AR':
+            # Fit an autoregressive model to y and then take supplement the dynamics matrix
+            varmodel = VAR(order = state_dim//y.shape[1], estimator='OLS')
+            varmodel.fit(y)
+            
+            Ainit = form_companion(varmodel.coef_)
+            # Supplement
+            Ainit = scipy.linalg.block_diag(Ainit, 0.5*np.eye(state_dim - Ainit.shape[0]))
+            Qinit = np.eye(Ainit.shape[0])
+            Rinit = 1e-3 * np.eye(y.shape[1])
+            Cinit = np.block([[np.eye(y.shape[1])], [np.zeros((Ainit.shape[0] - y.shape[1], y.shape[1]))]])
+            Sigma0 = scipy.linalg.solve_discrete_lyapunov(Ainit, Qinit)
+            x0 = np.zeros(state_dim)
+
+        elif self.init_strategy == 'SSID':
+            # Fit stable subpsace identification
+            ssid = SubspaceIdentification(estimator=IteratedStableEstimator, obs_regressor='OLS', **init_kwargs)
+            A, C, Cbar, L0, Q, R, S = ssid.identify(y, order=state_dim, T=3)
+            Ainit = A
+            Cinit = C
+            Qinit = Q
+            Rinit = R
+            
+            # Initial state mean set to PCA initialization, covariance set to solution of Lyapunov equation
+            x0 = np.zeros(state_dim)
+            Sigma0 = scipy.linalg.solve_discrete_lyapunov(A, Q)
+        
 
         filter_params = {
             'transition_matrices':Ainit,
@@ -59,8 +104,6 @@ class StableStateSpaceML():
         for key, val in filter_params.items():
             setattr(self, key, val)     
 
-    def fit(self, y):
-
         iter = 0
         tol = np.inf
 
@@ -69,8 +112,6 @@ class StableStateSpaceML():
             self.M(y, Exhat, Ptt, Ptt1)
             iter += 1
             print('Iteration %d, Log Likelihood: %f' % (iter, logll))
-
-
 
     def E(self, y):
         # Ripped out of pykalman KalmanFilter.em

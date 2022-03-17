@@ -143,18 +143,25 @@ def factorize(A, C, Cbar, L0):
     return B, D
 
 # Calculate the innovation covariance using the forward Kalman filter
-def filter_log_likelihood(y, A, C, Q, R, S):
-
+#def filter_log_likelihood(y, A, C, Q, R, S):
+def filter_log_likelihood(y, A, C, Cbar, L0):
     # Solve steady state, keep track of convergence - continuous iteration is not numerically stable
     # scipy's requirements on hermiticity are quite stringent...
-    R = 0.5 * (R + R.T)
-    Pinf = scipy.linalg.solve_discrete_are(A.T, C.T, Q, R, s=S)
+    #R = 0.5 * (R + R.T)
+    L0 = 0.5 * (L0 + L0.T)
+    #Pinf = scipy.linalg.solve_discrete_are(A.T, C.T, Q, R, s=S)
+    Pinf = scipy.linalg.solve_discrete_are(A.T, -C.T, np.zeros(A.shape), -L0, s=Cbar.T)
 
     if not np.all(np.linalg.eigvals(Pinf) > 0):
         raise RiccatiPSDError
 
-    Re = R + C @ Pinf @ C.T 
-    Kinf = (A @ Pinf @ C.T + S) @ np.linalg.inv(Re)
+    #Re = R + C @ Pinf @ C.T 
+    Re = L0 - C @ Pinf @ C.T
+    if not np.all(np.linalg.eigvals(Re) > 0):
+        raise RiccatiPSDError
+
+    Kinf = (Cbar.T - A @ Pinf @ C.T) @ np.linalg.inv(Re)
+    # Kinf = (A @ Pinf @ C.T + S) @ np.linalg.inv(Re)
     # # Try initializing with the zero matrix. Check the condition Kailath 14.5.24 to make sure the 
     # # iterations will converge. 
     # P0 = scipy.linalg.solve_discrete_lyapunov(A, Q)
@@ -168,13 +175,14 @@ def filter_log_likelihood(y, A, C, Q, R, S):
     #     # print('Lyapunov initialization succeeded!')
 
     # Innovation covariance
-    SigmaE = np.zeros((y.shape[0],) + R.shape)
+    SigmaE = np.zeros((y.shape[0], y.shape[1], y.shape[1]))
     # Innovations
     e = np.zeros(y.shape)
 
     # Initialization
     e[0, :] = y[0, :]
-    SigmaE[0] = R
+    # fix this at some point
+    SigmaE[0] = 1
     xhat = np.zeros(A.shape[0])
     # Propagation
     # tol = 1e-5
@@ -185,7 +193,7 @@ def filter_log_likelihood(y, A, C, Q, R, S):
 
     P = Pinf
     K = Kinf
-    Re = R + C @ P @ C.T
+    #Re = R + C @ P @ C.T
     for i in range(1, y.shape[0]):
         # # if norm_diff < tol:
         # #     P = Pinf
@@ -221,7 +229,7 @@ def filter_log_likelihood(y, A, C, Q, R, S):
     # Note the expression given by Hannan and Deistler is the *negative* of the log likelihood
     # Throw away the first 10 samples
     return -1/(2) * sum([np.linalg.slogdet(SigmaE[j])[1] for j in range(10, T)]) - 1/(2) * sum([e[j] @ np.linalg.pinv(SigmaE[j]) @ e[j] for j in range(10, T)])\
-            -R.shape[0]/2 * np.log(2 * np.pi)
+            -y.shape[1]/2 * np.log(2 * np.pi)
 
 # For number of parameters in a state space model, see: Uniquely identifiable state-space and ARMA parametrizations for multivariable linear systems
 def BIC(ll, state_dim, obs_dim, n_samples):
@@ -237,6 +245,7 @@ def NIC_BIC(cc, state_dim, obs_dim, n_samples):
     pass
 def NIC_AIC(cc, state_dim, obs_dim, **kwargs):
     pass
+
 def SVIC_BIC(cc, state_dim, obs_dim, n_samples):
     return cc + np.log(n_samples) * (2 * state_dim * obs_dim)
 def SVIC_AIC(cc, state_dim, obs_dim, **kwargs):
@@ -434,7 +443,47 @@ class SubspaceIdentification():
         self.estimator = estimator(T, **estimator_kwargs)
         self.score = score
 
-    def identify(self, y, T=None, min_order=None, max_order=None):
+    def identify(self, y, order, ccm=None, hankel_toeplitz=None, T=None):
+        if T is None:
+            T = self.T
+        if ccm is None:
+            # Should have an option to "not Toeplitzify"
+            ccm = estimate_autocorrelation(y, 2*T + 2)
+        if hankel_toeplitz is None:
+            # Get Toeplitz, Hankel structures
+            hankel_toeplitz = self.form_hankel_toeplitz(ccm, T)
+        # Factorize
+        zt, zt1, zbart, zbart1 = self.get_predictor_space(y, hankel_toeplitz, T, int(order))
+        # Identify (forward time)
+        A, C, Cbar, rho_A, rho_C = self.estimator.fit(y[self.T-1:-1, :], zt, zt1, return_residuals=True)
+
+        # Need to correct positive realness
+        if not check_gdare(A, C, Cbar, ccm[0]):
+            #print('pr correction employed')
+            L0, Cbar, Q, R, S = pr_correction_method1(A, C, Cbar, ccm[0], rho_A, rho_C)
+            # B, D = factorize(A, C, Cbar, L0)
+        else:
+            L0 = ccm[0]
+            # Obtain B, D, Q, R from the riccati equation
+            B, D = factorize(A, C, Cbar, L0)
+            Q = B @ B.T
+            R = D @ D.T
+            S = B @ D.T
+        
+        if np.any(np.abs(np.linalg.eigvals(R)) < 1e-12):
+            #print('R not > 0!')
+            R += 1e-6 * np.eye(R.shape[0])
+
+        # Identify (reverse time)
+        # At, Cbarrev, Crev = self.estimator.fit(y[1:-self.T+1,:], zbart, zbart1)
+        # if not check_gdare(At, Cbbar, Cbar, ccm[0]):
+        #     L0rev, Brev, Drev, Cbarrev = pr_correction_method1(At, Cbarrev, Crev, L0)
+
+
+        return A, C, Cbar, L0, Q, R, S
+
+
+    def identify_and_score(self, y, T=None, min_order=None, max_order=None):
         
         if T is None:
             T = self.T
@@ -454,37 +503,13 @@ class SubspaceIdentification():
         hankel_toeplitz = self.form_hankel_toeplitz(ccm, T)
 
         for i, order in enumerate(orders):
-            # Factorize
-            zt, zt1, zbart, zbart1 = self.get_predictor_space(y, hankel_toeplitz, T, int(order))
-            # Identify (forward time)
-            A, C, Cbar, rho_A, rho_C = self.estimator.fit(y[self.T-1:-1, :], zt, zt1, return_residuals=True)
-
-            # Need to correct positive realness
-            if not check_gdare(A, C, Cbar, ccm[0]):
-                print('pr correction employed')
-                L0, Cbar, Q, R, S = pr_correction_method1(A, C, Cbar, ccm[0], rho_A, rho_C)
-                # B, D = factorize(A, C, Cbar, L0)
-            else:
-                L0 = ccm[0]
-                # Obtain B, D, Q, R from the riccati equation
-                B, D = factorize(A, C, Cbar, L0)
-                Q = B @ B.T
-                R = D @ D.T
-                S = B @ D.T
-            
-            if np.any(np.abs(np.linalg.eigvals(R)) < 1e-12):
-                print('R not > 0!')
-                R += 1e-6 * np.eye(R.shape[0])
-
-            # Identify (reverse time)
-            # At, Cbarrev, Crev = self.estimator.fit(y[1:-self.T+1,:], zbart, zbart1)
-            # if not check_gdare(At, Cbbar, Cbar, ccm[0]):
-            #     L0rev, Brev, Drev, Cbarrev = pr_correction_method1(At, Cbarrev, Crev, L0)
+            A, C, Cbar, L0, Q, R, S = self.identify(y, order, ccm, hankel_topelitz)
                 
             # # Score
             if self.score in ['AIC', 'BIC']:
                 try:
-                    llfwd = filter_log_likelihood(y, A, C, Q, R, S)
+                    #llfwd = filter_log_likelihood(y, A, C, Q, R, S)
+                    llfwd = filter_log_likelihood(y, A, C, Cbar, L0)
                 except RiccatiPSDError:
                     llfwd = np.inf
                 # llfwd2 = pykalman_filter_wrapper(y, A, C, Q, R, S)
@@ -494,27 +519,17 @@ class SubspaceIdentification():
 
             elif self.score in ['SVIC_BIC', 'SVIC_AIC']:
                 # Pass in the first canonical correlation coefficient beyond the current model order
-                if i < order.size - 1:
+                if i <  hankel_toeplitz[1].size - 1:
                     scores[i, :] = score_fn_dict[self.score](hankel_toeplitz[1][i + 1], A.shape[0], 
                                                         C.shape[0], n_samples=y.shape[0])
                 else:
                     scores[i, :] = np.inf
+
         best_score_idx = np.argmin(scores[:, 0])
 #        best_score_idx = np.unravel_index(np.argmin(scores[:, 0]), scores.shape)
         order = orders[best_score_idx]
 
-        # Re-estimate
-        zt, zt1, zbart, zbart1 = self.get_predictor_space(y, hankel_toeplitz, T, int(order))
-        # In forward time
-        A, C, Cbar, rho_A, rho_C = self.estimator.fit(y[self.T-1:-1, :], zt, zt1, return_residuals=True)
-        # Correct
-        if not check_gdare(A, C, Cbar, ccm[0]):
-            L0, Cbar, Q, R, S = pr_correction_method1(A, C, Cbar, L0, rho_A, rho_C)
-        # else:
-        #     pdb.set_trace()
-        #     # # In reverse time:
-        #     # At, Cbar, C = self.estimator.fit(y[1:-self.T+1,:], zbart, zbart1)
-        #     # A = At.T
+        A, C, Cbar, L0, Q, R, S = self.identify(y, order, ccm, hankel_toeplitz)
 
         return A, C, Cbar, scores
 

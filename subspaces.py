@@ -346,7 +346,7 @@ class RidgeEstimator():
 # Method of Siddiqi et. al.
 class IteratedStableEstimator():
 
-    def __init__(self, T, interp_iter=10, obs_regressor='OLS'):
+    def __init__(self, T=None, interp_iter=10, obs_regressor='OLS'):
         self.T = T
         self.interp_iter = interp_iter
 
@@ -361,6 +361,7 @@ class IteratedStableEstimator():
         # Add some slack from the stability boundary
         self.check_stability = lambda A: np.all(np.abs(np.linalg.eigvals(A)) < 0.99)
 
+    @classmethod
     def solve_qp(self, A, x0, x1):
         # Setup the quadprog    
         P = 0.5 * np.kron(np.eye(A.shape[0]), x0 @ x0.T)

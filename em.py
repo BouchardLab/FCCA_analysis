@@ -1,9 +1,9 @@
-from re import I, S
 import numpy as np
 import scipy
 from scipy.optimize import minimize
 import pdb
 import torch
+from torch import nn
 from pyuoi.linear_model.var import VAR
 from subspaces import SubspaceIdentification, IteratedStableEstimator, form_lag_matrix
 
@@ -334,106 +334,66 @@ class StableStateSpaceML(StateSpaceML):
 
         print('Riccati check: %r' % check_dare(As, self.C, Qs, self.R))
 
-class LatentDisturbanceMStepWrapper():
 
-    def __init__(self, Ashape, Cshape, Kshape, observations):
+class DifferentiableKF(nn.Module):
 
-        self.Ashape = Ashape
-        self.Cshape = Cshape
-        self.Kshape = Kshape
+    def __init__(self, A, C, K, x0, P0):
+        super().__init__()
+        self.A = nn.Parameter(torch.tensor(A, dtype=torch.float32))
+        self.C = nn.Parameter(torch.tensor(C, dtype=torch.float32))
+        self.K = nn.Parameter(torch.tensor(K, dtype=torch.float32))
 
-        self.observations = torch.tensor(observations, dtype=torch.float32)
-    
-    def set_params(self, innovations, Ppred, x0):
-        self.Ppred = torch.tensor(Ppred, dtype=torch.float32)
-        #self.Psqrt0 = np.linalg.cholesky(Ppred[0])
-        self.Psqrt0 = torch.cholesky(self.Ppred[0]).float()
-        self.innovations = torch.tensor(innovations).float()
-        self.x0 = torch.tensor(x0).float()
+        self.x0 = torch.tensor(x0, dtype=torch.float32)
+        self.Psqrt0 = torch.cholesky(torch.tensor(P0)).float()        
 
-    def unpack(self, beta):
-        A = torch.tensor(beta[0:np.prod(self.Ashape)].reshape(self.Ashape), requires_grad=True).float()
-        C = torch.tensor(beta[np.prod(self.Ashape):np.prod(self.Ashape) + np.prod(self.Cshape)].reshape(self.Cshape), requires_grad=True).float()
-        K = torch.tensor(beta[np.prod(self.Ashape) + np.prod(self.Cshape):].reshape(self.Kshape), requires_grad=True).float()   
-        return A, C, K    
+    def forward(self, observations):
+        observations = torch.tensor(observations, dtype=torch.float32)
+        epsilon = observations[0]
 
-    def f(self, beta):
-        A, C, K = self.unpack(beta)
+        Psqrt = self.Psqrt0
+        x = self.x0
+        #yvar = torch.ger(epsilon, epsilon) + torch.chain_matmul(self.C, Psqrt, torch.t(Psqrt), torch.t(self.C))
 
-        # Wrap around _f and return numpy rather than torch
-        loss = self._f(A, C, K, update_params=False) 
-        return loss.detach().cpu().numpy().astype(float)
+        # for i in range(observations.shape[0]):
+        #     Psqrt = torch.matmul(self.A - torch.matmul(self.K, self.C), Psqrt)
+        #     x = torch.matmul(self.A - torch.matmul(self.K, self.C), x) + torch.matmul(self.K, observations[i - 1])
+        #     ypred = torch.matmul(self.C, x)
+        #     epsilon = observations[i] - ypred
+        #     yvar += torch.ger(epsilon, epsilon) + torch.chain_matmul(self.C, Psqrt, torch.t(Psqrt), torch.t(self.C))
+        
+        yvar = torch.eye(10) + torch.chain_matmul(self.C, Psqrt, torch.t(Psqrt), torch.t(self.C))
+        self.C.retain_grad()
+        assert(self.C.requires_grad)        
+        loss = torch.slogdet(yvar)[1]
+        loss.backward
+        assert(self.C.grad is not None)
  
-    def _f(self, A, C, K, update_params=True):
+        #yvar *= 1/observations.shape[0]
+        #loss = 
+        #self.C.retain_grad()
+        return yvar
 
-        if update_params:
-            Psqrt = self.Psqrt0
-            P = torch.zeros(self.Ppred.shape, dtype=torch.float32)
-            innovations = torch.zeros(self.observations.shape, dtype=torch.float32)
-            innovations[0] = self.observations[0]
-            x = self.x0
-            for i in range(1, self.Ppred.shape[0]):
-                Psqrt = torch.matmul(A - torch.matmul(K, C), Psqrt)
-                P[i] = torch.matmul(Psqrt, torch.t(Psqrt))
-                
-                # Update state
-                x = torch.matmul(A - torch.matmul(K, C), x) + torch.matmul(K, self.observations[i - 1])
-                ypred = torch.matmul(C, x)
-                innovations[i] = self.observations[i] - ypred
-        else: 
-            P = self.Ppred
-            innovations = self.innovations
+def _em_ACK(y, A, C, K, x0, P0):
 
-        # Test when gradients are retained
-        if update_params:
-            loss = torch.mean(x)
-            loss.backward
-            pdb.set_trace()
+    mstepfilter = DifferentiableKF(A, C, K, x0, P0)
 
-        x = [torch.ger(epsilon, epsilon).unsqueeze(0) + torch.chain_matmul(C, P[idx], torch.t(C))
-              for idx, epsilon in enumerate(innovations)]
-        loss = -torch.slogdet(torch.mean(torch.cat(x), dim=0))[1]
-        A.retain_grad()
-        C.retain_grad()
-        K.retain_grad()
+    opt = torch.optim.LBFGS(params=mstepfilter.parameters())        
+
+    for i in range(100):
+        yvar = mstepfilter(y)
+        loss = torch.slogdet(yvar)[1]
+        print(loss)
+        opt.zero_grad()
         loss.backward
         pdb.set_trace()
-        return loss
+        opt.step(lambda : mstepfilter.forward(y))
 
-
-    def grad(self, beta):
-        A, C, K = self.unpack(beta)
-        loss = self._f(A, C, K)
-        loss.backward
-        # Collect gradients and reshape
-        Agrad = A.grad.reshape(torch.prod(self.Ashape))
-        Cgrad = C.grad.reshape(torch.prod(self.Cshape))
-        Kgrad = K.grad.reshape(torch.prod(self.Kshape))
-        return torch.cat([Agrad, Cgrad, Kgrad]).detach().numpy()
-
-    # Print the loss if requested
-    def opt_callback(self, beta, opt):
-        pass
-        
-
-def _em_ACK(A, C, K, MStepObj):
-
-    beta0 = np.concatenate([A.reshape(A.size), C.reshape(C.size), K.reshape(K.size)])
-
-    opt = minimize(MStepObj.f, beta0, method='L-BFGS-B', jac=MStepObj.grad, callback=MStepObj.opt_callback)
-    
-    # Extract parameters
-    A, C, K = MStepObj.unpack(opt.x)
-    A = A.detach().numpy()
-    C = C.detach().numpy()
-    K = K.detach().numpy()
-
-    # Adjust for stability
-    if max(np.abs(np.linalg.eigvals(A))) > 0.99:
-        x = form_lag_matrix(MStepObj.x, 2)       
-        x0 = x[:, 0:A.shape[0]]
-        x1 = x[:, A.shape[0]:]
-        A = IteratedStableEstimator.solve_qp(A, x0, x1)
+    # # Adjust for stability
+    # if max(np.abs(np.linalg.eigvals(A))) > 0.99:
+    #     x = form_lag_matrix(MStepObj.x, 2)       
+    #     x0 = x[:, 0:A.shape[0]]
+    #     x1 = x[:, A.shape[0]:]
+    #     A = IteratedStableEstimator.solve_qp(A, x0, x1)
 
     return A, C, K
 
@@ -500,20 +460,12 @@ class ARMAStateSpaceML(StateSpaceML):
             'K':Kinit,
             'R':Rinit,
             'x0':x0,
+            'S': np.zeros(Kinit.shape),
             'Sigma0':Sigma0,
         }
 
         for key, val in filter_params.items():
             setattr(self, key, val)     
-
-
-
-    def fit(self, y, state_dim, **init_kwargs):
-        # Intialize the Mstep Wrapper, and just set its parameters later
-        self.MStepObj = LatentDisturbanceMStepWrapper(Ashape=(state_dim, state_dim), Cshape=(y.shape[1], state_dim), Kshape=(state_dim, y.shape[1]), 
-                                                      observations=y)
-
-        super(ARMAStateSpaceML, self).fit(y, state_dim, **init_kwargs)
 
     def E(self, y):
 
@@ -531,8 +483,7 @@ class ARMAStateSpaceML(StateSpaceML):
             Sigma0 = self.Sigma0        
 
         # A, C, K estimated jointly 
-        self.MStepObj.set_params(innovations, Ppred, x0)
-        A, C, K = _em_ACK(self.A, self.C, self.K, self.MStepObj)
+        A, C, K = _em_ACK(y, self.A, self.C, self.K, x0, Sigma0)
 
         # Observaton covariance - experiment with updating this before/after solving for A, C, K
         R = np.mean([np.outer(epsilon, epsilon) + self.C @ Ppred[idx] @ self.C.T for idx, epsilon in enumerate(innovations)])

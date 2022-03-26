@@ -1,6 +1,7 @@
 import numpy as np
 import scipy
 from scipy.optimize import minimize
+from tqdm import tqdm
 import pdb
 import torch
 from torch import nn
@@ -13,6 +14,7 @@ from pykalman.standard import (_em_observation_matrix, _em_observation_covarianc
 from pykalman.utils import log_multivariate_normal_density
 from riccati import check_dare, sqrt_filter, sqrt_smoother
 from subspaces import form_lag_matrix
+import time
 
 def filter(y, A, C, Q, R, P0, x0, S=None):
 
@@ -249,6 +251,12 @@ class StateSpaceML():
     def M(self, **kwargs):
         pass
 
+    def update_parameters(self, **kwargs):
+
+        for key, val in kwargs.items():
+            setattr(self, key, val)
+
+
 class StableStateSpaceML(StateSpaceML):
 
     def __init__(self, init_strategy='SSID', tol=1e-2, max_iter=100, 
@@ -319,9 +327,9 @@ class StableStateSpaceML(StateSpaceML):
                                initial_state_mean = x0,
                                initial_state_covariance = Sigma0)
 
+
     def update_parameters(self, **kwargs):
-        for key, val in kwargs.items():
-            setattr(self, key, val)
+        super().update_parameters(**kwargs)
 
         # Transition covariance is constrained
         self.Q = np.eye(self.A.shape[0]) - self.A @ self.A.T
@@ -352,50 +360,43 @@ class DifferentiableKF(nn.Module):
 
         Psqrt = self.Psqrt0
         x = self.x0
-        #yvar = torch.ger(epsilon, epsilon) + torch.chain_matmul(self.C, Psqrt, torch.t(Psqrt), torch.t(self.C))
+        yvar = torch.ger(epsilon, epsilon) + torch.chain_matmul(self.C, Psqrt, torch.t(Psqrt), torch.t(self.C))
 
-        # for i in range(observations.shape[0]):
-        #     Psqrt = torch.matmul(self.A - torch.matmul(self.K, self.C), Psqrt)
-        #     x = torch.matmul(self.A - torch.matmul(self.K, self.C), x) + torch.matmul(self.K, observations[i - 1])
-        #     ypred = torch.matmul(self.C, x)
-        #     epsilon = observations[i] - ypred
-        #     yvar += torch.ger(epsilon, epsilon) + torch.chain_matmul(self.C, Psqrt, torch.t(Psqrt), torch.t(self.C))
-        
-        yvar = torch.eye(10) + torch.chain_matmul(self.C, Psqrt, torch.t(Psqrt), torch.t(self.C))
-        self.C.retain_grad()
-        assert(self.C.requires_grad)        
+        for i in range(observations.shape[0]):
+            Psqrt = torch.matmul(self.A - torch.matmul(self.K, self.C), Psqrt)
+            x = torch.matmul(self.A - torch.matmul(self.K, self.C), x) + torch.matmul(self.K, observations[i - 1])
+            ypred = torch.matmul(self.C, x)
+            epsilon = observations[i] - ypred
+            yvar += torch.ger(epsilon, epsilon) + torch.chain_matmul(self.C, Psqrt, torch.t(Psqrt), torch.t(self.C))
+         
+        yvar *= 1/observations.shape[0]
         loss = torch.slogdet(yvar)[1]
-        loss.backward
-        assert(self.C.grad is not None)
- 
-        #yvar *= 1/observations.shape[0]
-        #loss = 
-        #self.C.retain_grad()
-        return yvar
+        return loss
 
-def _em_ACK(y, A, C, K, x0, P0):
+def _em_ACK(y, A, C, K, x0, P0, optim='Adam'):
 
     mstepfilter = DifferentiableKF(A, C, K, x0, P0)
 
-    opt = torch.optim.LBFGS(params=mstepfilter.parameters())        
+    loss_history = []
 
-    for i in range(100):
-        yvar = mstepfilter(y)
-        loss = torch.slogdet(yvar)[1]
-        print(loss)
+    #opt = torch.optim.LBFGS(params=mstepfilter.parameters())        
+    if optim == 'Adam':
+        opt = torch.optim.Adam(mstepfilter.parameters())
+    elif optim == 'Adadelta':
+        opt = torch.optim.Adadelta(mstepfilter.parameters())
+    elif optim == 'RMSprop':
+        opt = torch.optim.Adadelta(mstepfilter.parameters())
+    elif optim == 'LBFGS':
+        opt = torch.optim.LBFGS(mstepfilter.parameters())
+
+    for i in tqdm(range(100)):
         opt.zero_grad()
-        loss.backward
-        pdb.set_trace()
+        loss = mstepfilter(y)
+        loss.backward()
         opt.step(lambda : mstepfilter.forward(y))
+        loss_history.append(loss)
 
-    # # Adjust for stability
-    # if max(np.abs(np.linalg.eigvals(A))) > 0.99:
-    #     x = form_lag_matrix(MStepObj.x, 2)       
-    #     x0 = x[:, 0:A.shape[0]]
-    #     x1 = x[:, A.shape[0]:]
-    #     A = IteratedStableEstimator.solve_qp(A, x0, x1)
-
-    return A, C, K
+    return A, C, K, loss_history
 
 class ARMAStateSpaceML(StateSpaceML):
 
@@ -484,6 +485,15 @@ class ARMAStateSpaceML(StateSpaceML):
 
         # A, C, K estimated jointly 
         A, C, K = _em_ACK(y, self.A, self.C, self.K, x0, Sigma0)
+
+        # # Adjust for stability
+        # if max(np.abs(np.linalg.eigvals(A))) > 0.99:
+        #     x = 
+
+
+        #     A = IteratedStableEstimator.solve_qp(A, x0, x1)
+
+
 
         # Observaton covariance - experiment with updating this before/after solving for A, C, K
         R = np.mean([np.outer(epsilon, epsilon) + self.C @ Ppred[idx] @ self.C.T for idx, epsilon in enumerate(innovations)])

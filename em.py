@@ -14,7 +14,7 @@ from pykalman.standard import (_em_observation_matrix, _em_observation_covarianc
 from pykalman.utils import log_multivariate_normal_density
 from riccati import check_dare, sqrt_filter, sqrt_smoother
 from subspaces import form_lag_matrix
-import time
+from dstableFGM import dstable_descent
 
 def filter(y, A, C, Q, R, P0, x0, S=None):
 
@@ -396,7 +396,13 @@ def _em_ACK(y, A, C, K, x0, P0, optim='Adam'):
         opt.step(lambda : mstepfilter.forward(y))
         loss_history.append(loss)
 
-    return A, C, K, loss_history
+    # # Adjust for stability
+    if max(np.abs(np.linalg.eigvals(A))) > 0.99:
+        A = dstable_descent(A)
+    # This may not guarantee positive realnesS. In this case, we should explore 
+    # implementing this method: Sharma, FINDING THE NEAREST POSITIVE-REAL SYSTEM
+    
+    return A, C, K
 
 class ARMAStateSpaceML(StateSpaceML):
 

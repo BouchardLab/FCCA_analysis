@@ -16,6 +16,10 @@ from cov_estimation import estimate_autocorrelation
 class RiccatiPSDError(Exception):
     pass
 
+
+# Add some slack from the stability boundary
+check_stability = lambda A: np.all(np.abs(np.linalg.eigvals(A)) < 0.99)
+
 def form_lag_matrix(X, T, stride=1, stride_tricks=True, rng=None, writeable=False):
     """Form the data matrix with `T` lags.
 
@@ -358,10 +362,6 @@ class IteratedStableEstimator():
         # Use these as initial estimates
         self.state_lr = LinearRegression(fit_intercept=False)
 
-        # Add some slack from the stability boundary
-        self.check_stability = lambda A: np.all(np.abs(np.linalg.eigvals(A)) < 0.99)
-
-    @classmethod
     def solve_qp(self, A, x0, x1):
         # Setup the quadprog    
         P = 0.5 * np.kron(np.eye(A.shape[0]), x0 @ x0.T)
@@ -391,7 +391,7 @@ class IteratedStableEstimator():
         A0 = A            
         A1 = np.reshape(a, A.shape, order='F')
 
-        while not self.check_stability(A1):
+        while not check_stability(A1):
             # Append to constraints
             U, S, Vh = np.linalg.svd(A1)
             g = -1*np.outer(U[:, 0], Vh[0, :]).flatten('F')[:, np.newaxis]
@@ -406,7 +406,7 @@ class IteratedStableEstimator():
         gamma = 0.5
         for i in range(self.interp_iter):    
             A_ = gamma * A1 + (1 - gamma) * A0
-            if self.check_stability(A_):
+            if check_stability(A_):
                 # Bring A_ closer to A0 (gamma -> 0)
                 gamma = gamma - 0.5**(i + 1)
             else:
@@ -423,7 +423,7 @@ class IteratedStableEstimator():
         # First, do ordinary OLS and check for stability. If stable, then return
         A = self.state_lr.fit(Xt.T, Xt1.T).coef_
 
-        if not self.check_stability(A):
+        if not check_stability(A):
             A = self.solve_qp(A, Xt, Xt1)
 
         if return_residuals:

@@ -2,6 +2,7 @@ import numpy as np
 import scipy
 from scipy.optimize import minimize
 from tqdm import tqdm
+import time
 import pdb
 import torch
 from torch import nn
@@ -214,10 +215,14 @@ class StateSpaceML():
         tol = np.inf
 
         while iter < self.max_iter and tol > self.tol:
+            t0 = time.time()
             M_args, logll = self.E(y)
+            print('E step: %f' % (time.time() - t0))
+            t0 = time.time()
             self.M(y, *M_args)
+            print('M step: %f' % (time.time() - t0))
             iter += 1
-            print('Iteration %d, Log Likelihood: %f' % (iter, logll))
+            # print('Iteration %d, Log Likelihood: %f' % (iter, logll))
 
 
     def E(self, y):
@@ -252,7 +257,6 @@ class StateSpaceML():
         pass
 
     def update_parameters(self, **kwargs):
-
         for key, val in kwargs.items():
             setattr(self, key, val)
 
@@ -272,7 +276,7 @@ class StableStateSpaceML(StateSpaceML):
     def E(self, y):
         _, _, musmooth, _, _, Psmooth, Pt1t_smooth, _, logll = super(StableStateSpaceML, self).E(y)
 
-        return musmooth, Psmooth, Pt1t_smooth, logll
+        return (musmooth, Psmooth, Pt1t_smooth), logll
 
     def M(self, y, musmooth, Psmooth, Ptt1_smooth):
         
@@ -340,7 +344,7 @@ class StableStateSpaceML(StateSpaceML):
         As = self.A - self.S @ np.linalg.inv(self.R) @ self.C
         Qs = self.Q - self.S @ np.linalg.inv(self.R) @ self.S.T
 
-        print('Riccati check: %r' % check_dare(As, self.C, Qs, self.R))
+        # print('Riccati check: %r' % check_dare(As, self.C, Qs, self.R))
 
 
 class DifferentiableKF(nn.Module):
@@ -502,8 +506,8 @@ class ARMAStateSpaceML(StateSpaceML):
 
 
         # Observaton covariance - experiment with updating this before/after solving for A, C, K
-        R = np.mean([np.outer(epsilon, epsilon) + self.C @ Ppred[idx] @ self.C.T for idx, epsilon in enumerate(innovations)])
-
+        R = np.mean([np.outer(epsilon, epsilon) + self.C @ Ppred[idx] @ self.C.T for idx, epsilon in enumerate(innovations)], axis=0)
+        pdb.set_trace()
         self.update_parameters(A = A, 
                                C = C,
                                K = K, 

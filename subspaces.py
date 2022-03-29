@@ -438,7 +438,7 @@ class IteratedStableEstimator():
 
 class SubspaceIdentification():
 
-    def __init__(self, T=3, estimator=OLSEstimator, score='BIC', **estimator_kwargs):
+    def __init__(self, T=3, estimator=IteratedStableEstimator, score='BIC', **estimator_kwargs):
 
         self.T = T
         self.estimator = estimator(T, **estimator_kwargs)

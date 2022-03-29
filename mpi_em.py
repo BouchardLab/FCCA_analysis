@@ -30,6 +30,62 @@ class PoolWorker():
         for key, value in kwargs.items():
             setattr(self, key, value)
     
+    def VARfit(self, task_tuple):
+        state_dim = self.state_dim
+        obs_dim = self.obs_dim
+
+        # Unpack task
+        if len(task_tuple) == 2:
+            task_tuple, comm = task_tuple
+        else:
+            comm = None               
+
+        model_rep, trajectory_rep, \
+        N, fold_idx, model_order = task_tuple
+        
+        # Generate synthetic data with the right seeds
+        random_state = np.random.RandomState(seed=model_rep)
+        A = random_state.normal(scale=1/(1.7 * np.sqrt(state_dim)), size=(state_dim, state_dim))
+        while max(np.abs(np.linalg.eigvals(A))) > 0.99:
+            A = random_state.normal(scale=1/(1.7 * np.sqrt(state_dim)), size=(state_dim, state_dim))
+
+        scipy_randgen = scipy.stats.ortho_group
+        scipy_randgen.random_state = random_state
+
+        C = scipy_randgen.rvs(state_dim)[:, 0:obs_dim].T
+        ssr = SSR(A=A, B=np.eye(A.shape[0]), C=C)
+        ccm0 = ssr.autocorrelation(5)
+
+        random_state = np.random.RandomState(seed=trajectory_rep)
+        y = ssr.trajectory(N, rand_state=random_state)
+
+        train_idxs, test_idxs = list(KFold(5).split(np.arange(y.shape[0])))[fold_idx]
+        ccm1 = estimate_autocorrelation(y[train_idxs], 5)
+        ccm2 = estimate_autocorrelation(y[test_idxs], 5)
+
+        result = {}
+        result['fold_idx'] = fold_idx
+        result['N'] = N
+        result['trajectory_rep'] = trajectory_rep
+        result['model_rep'] = model_rep
+        result['true_params'] = (A, C)
+        result['autocorr_true'] = ccm0
+        result['autocorr_train'] = ccm1
+        result['autocorr_test'] = ccm2
+        result['model_order'] = model_order
+
+        print('Fitting VAR models')
+        varmodel1 =  VAR(order=model_order, estimator='ols')
+        varmodel1.fit(y)
+
+        varmodel2 = VAR(order=model_order, estimator='uoi', penalty='scad', fit_type='union_only')
+        varmodel2.fit(y)
+
+        result['ols_coef'] = varmodel1.coef_
+        result['uoi_coef'] = varmodel2.coef_
+        with open('%s/%d_%d_%d_%d_%d.dat' % (self.result_dir, model_rep, trajectory_rep, N, fold_idx, model_order), 'wb') as f:
+            f.write(pickle.dumps(result))
+
     def stableMLfit(self, task_tuple):
 
         state_dim = self.state_dim

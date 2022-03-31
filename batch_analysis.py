@@ -696,25 +696,9 @@ def main(cmd_args, args):
 
     if cmd_args.analysis_type == 'var':
         load_data(args['loader'], args['data_file'], args['loader_args'], comm)
-
-        varmodel = VAR(estimator=args['task_args']['estimator'], 
-                        penalty=args['task_args']['penalty'], 
-                        continuous=args['task_args']['continuous'],
-                        order=args['task_args']['order'],
-                        fit_type=args['task_args']['fit_type'],
-                        self_regress = args['task_args']['self_regress'],
-                        estimation_score=args['task_args']['estimation_score'],
-                        estimation_frac=1.,
-                        n_boots_est=1,
-                        comm=comm, ncomms=ncomms)
-
+        split_ranks = comm_split(comm, ncomms)
         savepath = args['results_file'].split('.dat')[0]
-        cv = KFold(args['task_args']['n_folds'], shuffle=False)
-        train_test_idxs = list(cv.split(X))
-        train_idxs = train_test_idxs[args['task_args']['idxs']][0]
-        X = X[train_idxs, ...]
-        
-        varmodel.fit(X, distributed_save=True, savepath=savepath, resume=cmd_args.resume)
+        var_(args['data_path'], args['results_file'], args['task_args'], split_ranks, comm)       
 
     elif cmd_args.analysis_type == 'dimreduc':
         load_data(args['loader'], args['data_file'], args['loader_args'], comm)        

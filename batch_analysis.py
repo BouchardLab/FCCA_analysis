@@ -350,6 +350,38 @@ class PoolWorker():
                 (results_folder, dim_val, fold_idx), 'wb') as f:
             f.write(pickle.dumps(results_dict))
 
+    def var(self, task_tuple):
+
+        # Unpack task tuple
+        if len(task_tuple) == 2:
+            task_tuple, comm = task_tuple
+        else:
+            comm = None               
+
+        fold_idx, var_kwargs, results_folder, subcomm, ncomms = task_tuple
+
+        print('Working on Fold %d' % fold_idx)
+
+        # Create var
+        estimator = VAR(comm=subcomm, ncomms=ncomms, **var_kwargs)
+            
+            # estimator=args['task_args']['estimator'], 
+            #             penalty=args['task_args']['penalty'], 
+            #             continuous=args['task_args']['continuous'],
+            #             order=args['task_args']['order'],
+            #             fit_type=args['task_args']['fit_type'],
+            #             self_regress = args['task_args']['self_regress'],
+            #             estimation_score=args['task_args']['estimation_score'],
+            #             estimation_frac=1.,
+            #             n_boots_est=1,
+            #             comm=comm, ncomms=ncomms)
+
+        savepath = args['results_file'].split('.dat')[0]
+        
+        estimator.fit(X, distributed_save=True, savepath=savepath, resume=cmd_args.resume)
+        # Save
+
+
 def parametric_dimreduc_(X, dim_vals, 
                         n_folds, comm,
                         method, method_args, 
@@ -584,6 +616,69 @@ def decoding_(dimreduc_file, decoder, data_path,
 
     if len(tasks) > 0:
         pool.map(worker.decoding, tasks)
+    pool.close()
+
+    consolidate(results_folder, results_file, comm)
+
+def var_(data_path, results_file, var_args, split_ranks, comm):
+
+    if comm is not None:
+        # Create folder for processes to write in
+        results_folder = results_file.split('.')[0]
+        if comm.rank == 0:
+            if not os.path.exists(results_folder):
+                os.makedirs(results_folder)
+    else: 
+        results_folder = results_file.split('.')[0]        
+        if not os.path.exists(results_folder):
+            os.makedirs(results_folder)
+
+    if comm is None:
+        # X is either of shape (n_time, n_dof) or (n_trials, n_time, n_dof)
+        X = globals()['X']
+
+        # Do cv_splits here
+        cv = KFold(n_folds, shuffle=False)
+        train_test_idxs = list(cv.split(X))
+        cv_tasks = [(idx,) + train_test_split for idx, train_test_split
+                    in enumerate(train_test_idxs)]    
+        tasks = itertools.product(cv_tasks, var_args)
+        tasks = [task + (results_folder) for task in tasks]
+        # Check which tasks have already been completed
+        if resume:
+            tasks = prune_var_tasks(tasks, results_folder)
+
+    else:
+        if comm.rank == 0:
+            # X is either of shape (n_time, n_dof) or (n_trials, n_time, n_dof)
+            X = globals()['X']
+
+            # Do cv_splits here
+            cv = KFold(n_folds, shuffle=False)
+            train_test_idxs = list(cv.split(X))
+            cv_tasks = [(idx,) + train_test_split for idx, train_test_split
+                        in enumerate(train_test_idxs)]    
+            tasks = itertools.product(cv_tasks, var_args)
+            tasks = [task + (results_folder) for task in tasks]
+            # Check which tasks have already been completed
+            if resume:
+                tasks = prune_var_tasks(tasks, results_folder)
+        else:
+            tasks = None
+
+    # Initialize Pool worker with data
+    worker = PoolWorker()
+
+    # VERY IMPORTANT: Once pool is created, the workers wait for instructions, so must proceed directly to map
+    if comm is not None:
+        tasks = comm.bcast(tasks)
+        print('%d Tasks Remaining' % len(tasks))
+        pool = MPIPool(comm, subgroups=split_ranks)
+    else:
+        pool = SerialPool()
+
+    if len(tasks) > 0:
+        pool.map(worker.var, tasks)
     pool.close()
 
     consolidate(results_folder, results_file, comm)

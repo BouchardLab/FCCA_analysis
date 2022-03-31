@@ -230,7 +230,6 @@ class StateSpaceML():
         Psqrt_pred, Ppred, K) = filter(y, self.A, self.C, self.Q, self.R, 
                                        self.Sigma0, self.x0, S=self.S)
 
-
         musmooth, Psmooth, Pfilt, J = smooth(y, self.A, self.C, self.Q, self.R,
                                              mufilt, mupred, Psqrt_filt, Ppred, S=self.S) 
 
@@ -422,6 +421,7 @@ class ARMAStateSpaceML(StateSpaceML):
             Ainit = init_kwargs['Ainit']
             Cinit = init_kwargs['Cinit']
             Kinit = init_kwargs['Kinit']
+            Qinit = init_kwargs['Qinit']
             Rinit = init_kwargs['Rinit']
             x0 = init_kwargs['x0']
             Sigma0 = init_kwargs['Sigma0']
@@ -480,6 +480,9 @@ class ARMAStateSpaceML(StateSpaceML):
 
     def E(self, y):
 
+        # Need to be memory efficient - do not store anything here
+
+
         _, _, musmooth, _, Ppred, Psmooth, Pt1t_smooth, innovations, logll = super(ARMAStateSpaceML, self).E(y)
         return (musmooth, Psmooth, Ppred, innovations), logll
 
@@ -507,7 +510,6 @@ class ARMAStateSpaceML(StateSpaceML):
 
         # Observaton covariance - experiment with updating this before/after solving for A, C, K
         R = np.mean([np.outer(epsilon, epsilon) + self.C @ Ppred[idx] @ self.C.T for idx, epsilon in enumerate(innovations)], axis=0)
-        pdb.set_trace()
         self.update_parameters(A = A, 
                                C = C,
                                K = K, 

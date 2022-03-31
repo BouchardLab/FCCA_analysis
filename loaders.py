@@ -272,7 +272,7 @@ def load_shenoy(data_path, bin_width, boxcox, filter_fn, filter_kwargs,
     return dat
 
 def load_sabes(filename, bin_width=50, boxcox=0.5, filter_fn='none', filter_kwargs={}, spike_threshold=100,
-               std_behavior=False, **kwargs):
+               std_behavior=False, region='M1', **kwargs):
 
     # Convert bin width to s
     bin_width /= 1000
@@ -294,10 +294,11 @@ def load_sabes(filename, bin_width=50, boxcox=0.5, filter_fn='none', filter_kwar
         dat = {}
 
         # NOTE: AREN'T INCLUDING S1
-        indices = M1_indices
+        if region == 'M1':
+            indices = M1_indices
+        elif region == 'S1':
+            indices = S1_indices
 
-        # Get region (M1 or S1)
-        region = chan_names[indices[0]].split(" ")[0]
         # Perform binning
         n_channels = len(indices)
         n_sorted_units = f["spikes"].shape[0] - 1  # The FIRST one is the 'hash' -- ignore!
@@ -367,7 +368,7 @@ def load_peanut_across_epochs(fpath, epochs, spike_threshold, **loader_kwargs):
         unit_idxs = np.isin(dat['unit_ids'], np.array(list(unit_id_intersection)).astype(int)) 
 
 def load_peanut(fpath, epoch, spike_threshold, bin_width=25, boxcox=0.5,
-                filter_fn='none', speed_threshold=4, **filter_kwargs):
+                filter_fn='none', speed_threshold=4, region='HPc', **filter_kwargs):
     '''
         Parameters:
             fpath: str
@@ -391,13 +392,22 @@ def load_peanut(fpath, epoch, spike_threshold, bin_width=25, boxcox=0.5,
     
     # Collect single units located in hippocampus
 
-    Hpc_probes = [key for key, value in dict_['identification']['nt_brain_region_dict'].items()
+    HPc_probes = [key for key, value in dict_['identification']['nt_brain_region_dict'].items()
                   if value == 'HPc']
+
+    OFC_probes = [key for key, value in dict_['identification']['nt_brain_region_dict'].items()
+                  if value == 'OFC']
+
+    if region == 'HPc':
+        probes = HPc_probes
+    elif region == 'OFC':
+        probes = OFC_probes
+
     spike_times = []
     unit_ids = []
     for probe in dict_['spike_times'].keys():
         probe_id = probe.split('_')[-1]
-        if probe_id in Hpc_probes:
+        if probe_id in probes:
             for unit, times in dict_['spike_times'][probe].items():
                 spike_times.append(list(times))
                 unit_ids.append((probe_id, unit))

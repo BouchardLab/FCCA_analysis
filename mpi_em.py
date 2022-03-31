@@ -172,8 +172,9 @@ if __name__ == '__main__':
     # (3) OLS vs. Ridge vs. IteratedStability in terms of fit to cross-correlation matrices
 
     n_folds = 5
-    model_orders = np.arange(15, 27, 2)
-    
+    #model_orders = np.arange(15, 27, 2)
+    model_orders = np.array([1, 2, 3, 4])
+
     # Form outer product over tasks
     tasks = list(itertools.product(np.arange(model_reps), np.arange(trajectory_reps), N, range(n_folds), model_orders))
 
@@ -203,5 +204,5 @@ if __name__ == '__main__':
         pool = SerialPool()
 
     if len(tasks) > 0:
-        pool.map(worker.stableMLfit, tasks)
+        pool.map(worker.VARfit, tasks)
     pool.close()

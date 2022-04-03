@@ -105,7 +105,7 @@ def gen_argfiles(jobdir, arg_array, fname):
 # numtasks: number of total MPI processes desired
 # cpu_per_task: number of cpus to allocate per MPI process
 # n_nodes: numer of nodes to request
-def init_batch(submit_file, jobdir, job_time, qos='regular', local=False, shifter=False, 
+def init_batch(submit_file, jobdir, job_time='04:00:00', qos='regular', local=False, shifter=False, 
                sequential=False, resume=True, split_sbatch=False, **kwargs):
 
     if not os.path.exists(jobdir):

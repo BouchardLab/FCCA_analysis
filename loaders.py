@@ -293,11 +293,12 @@ def load_sabes(filename, bin_width=50, boxcox=0.5, filter_fn='none', filter_kwar
         # Individually process M1 and S1 indices
         dat = {}
 
-        # NOTE: AREN'T INCLUDING S1
         if region == 'M1':
             indices = M1_indices
         elif region == 'S1':
             indices = S1_indices
+        elif region == 'both':
+            indices = list(range(n_channels))
 
         # Perform binning
         n_channels = len(indices)

@@ -28,11 +28,11 @@ def standardize(X):
 
     scaler = StandardScaler()
 
-    if np.ndim(X) == 3:
+    if type(X) == list:
+        Xstd = [scaler.fit_transform(x) for x in X] 
+    elif np.ndim(X) == 3:
         Xstd = np.array([scaler.fit_transform(X[idx, ...]) 
                          for idx in range(X.shape[0])])
-    elif type(X) == list:
-        Xstd = [scaler.fit_transform(x) for x in X] 
     else:
         Xstd = scaler.fit_transform(X)
 

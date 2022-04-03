@@ -13,6 +13,7 @@ from sklearn.model_selection import KFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 
+from pyuoi.linear_model.var import VAR
 from dca.dca import DynamicalComponentsAnalysis as DCA
 from dca.cov_util import form_lag_matrix
 from dca_research.kca import KalmanComponentsAnalysis as KCA
@@ -94,6 +95,13 @@ def prune_decoding_tasks(tasks, results_folder):
             to_do.append(task)
 
     return to_do
+
+# Currently only thing we check for fold_idx
+def prune_var_tasks(tasks, results_folder):
+    completed_files = glob.glob('%s/*.dat' % results_folder)
+    folds = []
+    for completed_file in completed_files:
+        pdb.set_trace()
 
 
 # Tiered communicators for use with schwimmbad
@@ -350,38 +358,6 @@ class PoolWorker():
                 (results_folder, dim_val, fold_idx), 'wb') as f:
             f.write(pickle.dumps(results_dict))
 
-    def var(self, task_tuple):
-
-        # Unpack task tuple
-        if len(task_tuple) == 2:
-            task_tuple, comm = task_tuple
-        else:
-            comm = None               
-
-        fold_idx, var_kwargs, results_folder, subcomm, ncomms = task_tuple
-
-        print('Working on Fold %d' % fold_idx)
-
-        # Create var
-        estimator = VAR(comm=subcomm, ncomms=ncomms, **var_kwargs)
-            
-            # estimator=args['task_args']['estimator'], 
-            #             penalty=args['task_args']['penalty'], 
-            #             continuous=args['task_args']['continuous'],
-            #             order=args['task_args']['order'],
-            #             fit_type=args['task_args']['fit_type'],
-            #             self_regress = args['task_args']['self_regress'],
-            #             estimation_score=args['task_args']['estimation_score'],
-            #             estimation_frac=1.,
-            #             n_boots_est=1,
-            #             comm=comm, ncomms=ncomms)
-
-        savepath = args['results_file'].split('.dat')[0]
-        
-        estimator.fit(X, distributed_save=True, savepath=savepath, resume=cmd_args.resume)
-        # Save
-
-
 def parametric_dimreduc_(X, dim_vals, 
                         n_folds, comm,
                         method, method_args, 
@@ -620,69 +596,6 @@ def decoding_(dimreduc_file, decoder, data_path,
 
     consolidate(results_folder, results_file, comm)
 
-def var_(data_path, results_file, var_args, split_ranks, comm):
-
-    if comm is not None:
-        # Create folder for processes to write in
-        results_folder = results_file.split('.')[0]
-        if comm.rank == 0:
-            if not os.path.exists(results_folder):
-                os.makedirs(results_folder)
-    else: 
-        results_folder = results_file.split('.')[0]        
-        if not os.path.exists(results_folder):
-            os.makedirs(results_folder)
-
-    if comm is None:
-        # X is either of shape (n_time, n_dof) or (n_trials, n_time, n_dof)
-        X = globals()['X']
-
-        # Do cv_splits here
-        cv = KFold(n_folds, shuffle=False)
-        train_test_idxs = list(cv.split(X))
-        cv_tasks = [(idx,) + train_test_split for idx, train_test_split
-                    in enumerate(train_test_idxs)]    
-        tasks = itertools.product(cv_tasks, var_args)
-        tasks = [task + (results_folder) for task in tasks]
-        # Check which tasks have already been completed
-        if resume:
-            tasks = prune_var_tasks(tasks, results_folder)
-
-    else:
-        if comm.rank == 0:
-            # X is either of shape (n_time, n_dof) or (n_trials, n_time, n_dof)
-            X = globals()['X']
-
-            # Do cv_splits here
-            cv = KFold(n_folds, shuffle=False)
-            train_test_idxs = list(cv.split(X))
-            cv_tasks = [(idx,) + train_test_split for idx, train_test_split
-                        in enumerate(train_test_idxs)]    
-            tasks = itertools.product(cv_tasks, var_args)
-            tasks = [task + (results_folder) for task in tasks]
-            # Check which tasks have already been completed
-            if resume:
-                tasks = prune_var_tasks(tasks, results_folder)
-        else:
-            tasks = None
-
-    # Initialize Pool worker with data
-    worker = PoolWorker()
-
-    # VERY IMPORTANT: Once pool is created, the workers wait for instructions, so must proceed directly to map
-    if comm is not None:
-        tasks = comm.bcast(tasks)
-        print('%d Tasks Remaining' % len(tasks))
-        pool = MPIPool(comm, subgroups=split_ranks)
-    else:
-        pool = SerialPool()
-
-    if len(tasks) > 0:
-        pool.map(worker.var, tasks)
-    pool.close()
-
-    consolidate(results_folder, results_file, comm)
-
 def main(cmd_args, args):
     total_start = time.time() 
 
@@ -696,9 +609,19 @@ def main(cmd_args, args):
 
     if cmd_args.analysis_type == 'var':
         load_data(args['loader'], args['data_file'], args['loader_args'], comm)
-        split_ranks = comm_split(comm, ncomms)
+        X = globals()['X']
+        split_idxs = list(KFold(5).split(X))
+        train_idxs, test_idxs = split_idxs[args['task_args']['fold_idx']]
         savepath = args['results_file'].split('.dat')[0]
-        var_(args['data_path'], args['results_file'], args['task_args'], split_ranks, comm)       
+
+        # Pop off fold_idx from task_args
+        del args['task_args']['fold_idx']
+
+        estimator = VAR(comm=comm, ncomms=ncomms, **args['task_args'])  
+        # Need to do distributed save and provide filepath
+        t0 = time.time()
+        estimator.fit(X[train_idxs], distributed_save=True, savepath=savepath)
+
 
     elif cmd_args.analysis_type == 'dimreduc':
         load_data(args['loader'], args['data_file'], args['loader_args'], comm)        

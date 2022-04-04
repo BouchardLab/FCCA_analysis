@@ -6,6 +6,7 @@ import marshal
 import itertools
 import pdb
 from tqdm import tqdm
+import importlib
 from sklearn.model_selection import KFold
 
 #from batch_analysis import comm_split, dca_main, decoding_per_dim
@@ -51,7 +52,7 @@ def check_root(comm):
         else:
             return False
 
-def cleanup_var(root_dir, job_name, data_path=None, resume=False):
+def cleanup_var(root_dir, job_name, submit_file):
 
     to_do = {}
 
@@ -63,6 +64,20 @@ def cleanup_var(root_dir, job_name, data_path=None, resume=False):
     for argfile in argfiles_:
         if not 'arg_' in argfile:
             argfiles.append(argfile)
+
+    # Load the submit file to get the data files.
+    name = submit_file.split('/')[-1]    
+    name = os.path.splitext(name)[0]
+    sys.path.append(path)
+    submit_args = importlib.import_module(name)
+
+    # Load each data file and for each set of loader args, get the dof.
+    data_files = submit_args.data_files
+    n_dof = np.zeros((len(data_files), len(submit_args.loader_args)))
+    for i, data_file in enumerate(data_files):
+        for j, loader_arg in enumerate(submit_args.loader_args):
+            dat = LOADER_DICT[submit_args.loader](data_file, loader_arg])
+            n_dof[i, j] = dat['spike_rates'].shape[-1]
 
     # For each arg file, get the number and then find the
     # directory
@@ -84,18 +99,16 @@ def cleanup_var(root_dir, job_name, data_path=None, resume=False):
         with open(argfile, 'rb') as f:
             args = pickle.load(f)
 
-        # Data path might point to a different machine
-        if data_path is not None:
-            data_file = data_path + '/' + args['data_file'].split('/')[-1]
-        else:
-            data_file = args['data_file']
-
-        # Open the data file and find the n_dof 
-        dat = LOADER_DICT[args['loader']](data_file, **args['loader_args'])
-
-        n_dof = dat['spike_rates'].shape[-1]
-
         # Expected output files
+        # First lookup dof given the data file and loader_args corresponding to this argfile
+        idx1 = data_files.index(args['data_file'])
+        idx2 = next((index for (index, d) in enumerate(submit_args.loader_args) if d == args['loader_args']))
+
+        n_dof = n_dof[idx1, idx2]
+
+        # Scale by the var order
+        n_dof *= args['task_args']['order']
+
         expected_files = ['%d.dat' % i for i in np.arange(n_dof)]
         data_files = glob.glob('%s/*.dat' % jobdir)
         found_files = [file.split('/')[-1] for file in data_files]
@@ -115,7 +128,7 @@ def cleanup_var(root_dir, job_name, data_path=None, resume=False):
                 rowno = int(data_file.split('/')[-1].split('.dat')[0])
                 with open(data_file, 'rb') as f:
                     coef_ = pickle.load(f)
-                    ss = pickle.load(f) 
+                    #ss = pickle.load(f) 
 
                 if args['task_args']['self_regress']:
                     coef__ = np.reshape(coef_, (args['task_args']['order'], n_dof)).T
@@ -126,7 +139,7 @@ def cleanup_var(root_dir, job_name, data_path=None, resume=False):
 
                 coefs[rowno, ...] = np.fliplr(coef__) 
 
-                scores_and_supports[rowno] = ss
+                #scores_and_supports[rowno] = ss
 
             # This mirrors the sequence in pyuoi var
             coefs = np.transpose(coefs, axes=(2, 0, 1))
@@ -134,28 +147,9 @@ def cleanup_var(root_dir, job_name, data_path=None, resume=False):
             with open(results_file, 'wb') as f:
                 f.write(pickle.dumps(args))
                 f.write(pickle.dumps(coefs))
-                f.write(pickle.dumps(scores_and_supports))
+                #f.write(pickle.dumps(scores_and_supports))
 
             completed_files.append(results_file)
-
-    # else:
-
-    #     varmodel = VAR(estimator=args['task_args']['estimator'], 
-    #                     penalty=args['task_args']['penalty'], 
-    #                     order=args['task_args']['order'],
-    #                     fit_type=args['task_args']['fit_type'],
-    #                     self_regress = args['task_args']['self_regress'],
-    #                     comm=comm, ncomms=ncomms)
-    #     savepath = args['results_file'].split('.dat')[0]
-
-    #     # Which indices should we fit to?
-    #     if args['task_args']['idxs'] == 'all':
-    #         X = np.squeeze(dat['spike_rates'])
-    #     else:
-    #         X = np.squeeze(dat['spike_rates'])[args['task_args']['idxs'], ...]
-        
-    #     varmodel.fit(X, distributed_save=True, savepath=savepath, resume=cmd_args.resume)
-
 
     return to_do, completed_files
 

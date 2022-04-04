@@ -3,11 +3,13 @@ import os
 import numpy as np
 import itertools
 
-#script_path = '/global/homes/a/akumar25/repos/localization/batch_analysis_sabes.py'
-script_path = '/home/akumar/nse/neural_control/batch_analysis.py'
+script_path = '/global/homes/a/akumar25/repos/neural_control/batch_analysis.py'
+#script_path = '/home/akumar/nse/neural_control/batch_analysis.py'
 
-desc = 'Decode from sabes_dimreduc'
-data_path = '/mnt/Secondary/data/sabes'
+desc = 'Decode from sabes_dimreduc lag5'
+#data_path = '/mnt/Secondary/data/sabes'
+data_path = '/global/cscratch1/sd/akumar25/sabes'
+
 
 # Data files specified by dimreduc files
 data_files = [' ']
@@ -22,14 +24,15 @@ analysis_type = 'decoding'
 loader_args = [[]]
 
 # Grab all the dimreduc files. 
-dimreduc_files = glob.glob('/mnt/Secondary/data/sabes_dimreduc/sabes_dimreduc_*.dat')
+#dimreduc_files = glob.glob('/mnt/Secondary/data/sabes_dimreduc/sabes_dimreduc_*.dat')
+dimreduc_files = glob.glob(os.environ['SCRATCH'] + '/sabes_dimreduc_lag5/sabes_dimreduc_lag5_*.dat')
 
 # Create separate set of task args for each dimreduc file and
 # each set of decoder_args. The rest of the iterables are handled
 # in parallel at execution
 
 decoders = [{'method': 'lr', 'args':{'trainlag': 4, 'testlag': 4, 
-				 'decoding_window':5}}]
+				 'decoding_window':1}}]
 
 task_args = []
 for param_comb in itertools.product(dimreduc_files, decoders):

@@ -200,6 +200,9 @@ def cleanup_dca(root_dir, job_name):
         for expected_file in expected_files:
             if expected_file not in found_files:
                 to_do[jobno].append(expected_file)
+        if len(to_do[jobno]) != 0:
+            print('%d:%s' % (jobno, args['task_args']['dimreduc_method']))
+
 
         if len(to_do[jobno]) == 0:
             results_file = '%s/%s_%d.dat' % (root_dir, job_name, jobno)

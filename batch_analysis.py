@@ -327,6 +327,7 @@ class PoolWorker():
         # Project the (train and test) data onto the subspace and train and score the requested decoder
         train_idxs = dimreduc_results[dimreduc_idx]['train_idxs']
         test_idxs = dimreduc_results[dimreduc_idx]['test_idxs']
+        lag = dimreduc_results[dimreduc_idx]['lag']
 
         print(X.shape)
         print(Y.shape)
@@ -334,8 +335,18 @@ class PoolWorker():
         Ytrain = Y[train_idxs, ...]
         Ytest = Y[test_idxs, ...]
 
-        Xtrain = X[train_idxs, ...] @ coef_
-        Xtest = X[test_idxs, ...] @ coef_
+        Xtrain = X[train_idxs, ...]
+        Xtest = X[test_idxs, ...]
+
+        if np.ndim(Xtrain) == 2:
+            Xtrain = form_lag_matrix(Xtrain, lag)
+            Xtest = form_lag_matrix(Xtest, lag)
+        else:
+            Xtrain = np.array([form_lag_matrix(xx, lag) for xx in Xtrain])
+            Xtest = np.array([form_lag_matrix(xx, lag) for xx in Xtest])
+
+        Xtrain = Xtrain @ coef_
+        Xtest = Xtest @ coef_
 
         r2_pos, r2_vel, r2_acc, decoder_obj = DECODER_DICT[decoder['method']](Xtest, Xtrain, Ytest, Ytrain, **decoder['args'])
 
@@ -608,6 +619,12 @@ def main(cmd_args, args):
         ncomms = None
 
     if cmd_args.analysis_type == 'var':
+
+        # If resume, check whether the completed .dat file exists, and if so, skip
+        if cmd_args.resume:
+            if os.path.exists(args['results_file']):
+                return
+
         load_data(args['loader'], args['data_file'], args['loader_args'], comm)
         X = globals()['X']
         split_idxs = list(KFold(5).split(X))
@@ -624,6 +641,12 @@ def main(cmd_args, args):
         t0 = time.time()
 
         estimator.fit(X[train_idxs])
+
+        # Need to save at this point as the var object did not
+        if not estimator.distributed_save:
+            if comm.rank == 0:
+                with open(args['results_file'], 'wb') as f:
+                    f.write(pickle.dumps(estimator.coef_))            
 
     elif cmd_args.analysis_type == 'dimreduc':
         load_data(args['loader'], args['data_file'], args['loader_args'], comm)        

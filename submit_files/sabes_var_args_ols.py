@@ -2,9 +2,8 @@ import glob
 import os
 
 #script_path = '/global/homes/a/akumar25/repos/neural_control/batch_analysis.py'
-#script_path = '/home/akumar/nse/localization/batch_analysis_sabes.py'
 script_path = '/home/akumar/nse/neural_control/batch_analysis.py'
-desc = 'cross validate, disregeard selection, want to use cross validated ccm estimation as the criteria. Fit on M1 and S1, and marginal models'
+desc = 'cross validate, disregard selection, want to use cross validated ccm estimation as the criteria. Fit on M1 and S1, and marginal models'
 
 #data_path = os.environ['SCRATCH'] + '/sabes'
 data_path = '/mnt/Secondary/data/sabes'    
@@ -26,7 +25,6 @@ loader_args = [{'bin_width':50, 'filter_fn':'none', 'filter_kwargs':{}, 'boxcox'
                {'bin_width':50, 'filter_fn':'none', 'filter_kwargs':{}, 'boxcox':0.5, 'spike_threshold':100, 'region':'both'}]
 
 # Estimation score not important since we save all estimates and do selection subsequently
-task_args = [{'estimator': 'uoi', 'penalty': 'scad', 'self_regress':sr, 'continuous':False, 'n_boots_sel':1, 'selection_frac':1., 'n_boots_est': 1, 'estimation_frac':0.9, 
-              'fit_type':'union_only', 'order':order, 'estimation_score':'null', 'fold_idx':idx, 'distributed_save':True} 
+task_args = [{'estimator': 'ols', 'self_regress':sr, 'order':order, 'estimation_score':'null', 'fold_idx':idx, 'distributed_save':False} 
               for order in [1, 2, 3, 4, 5] for sr in [True, False]
               for idx in range(5)]

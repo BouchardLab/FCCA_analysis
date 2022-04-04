@@ -617,11 +617,13 @@ def main(cmd_args, args):
         # Pop off fold_idx from task_args
         del args['task_args']['fold_idx']
 
+        args['task_args']['savepath'] = savepath
+
         estimator = VAR(comm=comm, ncomms=ncomms, **args['task_args'])  
         # Need to do distributed save and provide filepath
         t0 = time.time()
-        estimator.fit(X[train_idxs], distributed_save=True, savepath=savepath)
 
+        estimator.fit(X[train_idxs])
 
     elif cmd_args.analysis_type == 'dimreduc':
         load_data(args['loader'], args['data_file'], args['loader_args'], comm)        

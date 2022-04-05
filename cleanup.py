@@ -1,7 +1,8 @@
-import os
+import os, sys
 import glob
 import numpy as np 
 import pickle
+import pandas as pd
 import marshal
 import itertools
 import pdb
@@ -68,8 +69,9 @@ def cleanup_var(root_dir, job_name, dof_file):
 
     # Load the dataframe that will tell us how many dof for each VAR model
     with open(dof_file, 'rb') as f:
-        dof_df = pickle.load(f)
+        dof_list = pickle.load(f)
 
+    dof_df = pd.DataFrame(dof_list)
     # For each arg file, get the number and then find the
     # directory
     completed_files = []
@@ -90,7 +92,9 @@ def cleanup_var(root_dir, job_name, dof_file):
         with open(argfile, 'rb') as f:
             args = pickle.load(f)
 
-        dof_ = apply_df_filters(dof_df, data_file=args['data_file'], **args['loader_args'])
+        data_file = args['data_file'].split('/')[-1]
+
+        dof_ = apply_df_filters(dof_df, data_file=data_file, **args['loader_args'])
         assert(dof_.shape[0] == 1)
         n_dof = dof_.iloc[0]['dof']
 

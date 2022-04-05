@@ -272,7 +272,7 @@ def load_shenoy(data_path, bin_width, boxcox, filter_fn, filter_kwargs,
     return dat
 
 def load_sabes(filename, bin_width=50, boxcox=0.5, filter_fn='none', filter_kwargs={}, spike_threshold=100,
-               std_behavior=False, region='M1', **kwargs):
+               std_behavior=False, region='M1', get_dof_only=False, **kwargs):
 
     # Convert bin width to s
     bin_width /= 1000
@@ -305,7 +305,7 @@ def load_sabes(filename, bin_width=50, boxcox=0.5, filter_fn='none', filter_kwar
         n_sorted_units = f["spikes"].shape[0] - 1  # The FIRST one is the 'hash' -- ignore!
         n_units = n_channels * n_sorted_units
         max_t = t[-1]
-        
+
         spike_times = np.zeros((n_sorted_units - 1, len(indices))).astype(np.object)
 
 

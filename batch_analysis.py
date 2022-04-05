@@ -618,12 +618,16 @@ def main(cmd_args, args):
         comm = None
         ncomms = None
 
+
     if cmd_args.analysis_type == 'var':
+
+        # Manually override and set ncomms to comm.size
+        ncomms = comm.size
 
         # If resume, check whether the completed .dat file exists, and if so, skip
         if cmd_args.resume:
             if os.path.exists(args['results_file']):
-                return
+                return 
 
         load_data(args['loader'], args['data_file'], args['loader_args'], comm)
         X = globals()['X']
@@ -636,9 +640,13 @@ def main(cmd_args, args):
 
         args['task_args']['savepath'] = savepath
 
+        # Manually override to set distriubted save to true
+        args['task_args']['distributed_save'] = True
+
         estimator = VAR(comm=comm, ncomms=ncomms, **args['task_args'])  
         # Need to do distributed save and provide filepath
         t0 = time.time()
+
 
         estimator.fit(X[train_idxs])
 

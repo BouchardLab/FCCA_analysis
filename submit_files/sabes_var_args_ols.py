@@ -1,12 +1,12 @@
 import glob
 import os
 
-#script_path = '/global/homes/a/akumar25/repos/neural_control/batch_analysis.py'
-script_path = '/home/akumar/nse/neural_control/batch_analysis.py'
+script_path = '/global/homes/a/akumar25/repos/neural_control/batch_analysis.py'
+#script_path = '/home/akumar/nse/neural_control/batch_analysis.py'
 desc = 'cross validate, disregard selection, want to use cross validated ccm estimation as the criteria. Fit on M1 and S1, and marginal models'
 
-#data_path = os.environ['SCRATCH'] + '/sabes'
-data_path = '/mnt/Secondary/data/sabes'    
+data_path = os.environ['SCRATCH'] + '/sabes'
+#data_path = '/mnt/Secondary/data/sabes'    
  
 # These are the data files that contain both M1 and S1 recordings.
 data_files = glob.glob('%s/loco*' % data_path)

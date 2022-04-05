@@ -1,5 +1,6 @@
 import numpy as np 
 import scipy
+import pdb
 
 # Calculate loadings 
 # U: matrix of shape (n_neurons * order, dim)
@@ -49,10 +50,7 @@ def apply_df_filters(dtfrm, invert=False, **kwargs):
                 else:
                     filtered_df = filtered_df.loc[filtered_df[key].isin(value)]
             elif type(value) == str:
-                if invert:
-                    filtered_df = filtered_df.loc[np.invert(value in filtered_df[key])]
-                else:
-                    filtered_df = filtered_df.loc[value in filtered_df[key]]
+                filtered_df = filtered_df.loc[[value in s for s in filtered_df[key].values]]
             else:
                 if invert:
                     filtered_df = filtered_df.loc[filtered_df[key] != value]

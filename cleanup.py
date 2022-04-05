@@ -11,6 +11,7 @@ from sklearn.model_selection import KFold
 
 #from batch_analysis import comm_split, dca_main, decoding_per_dim
 from loaders import load_sabes, load_shenoy, load_peanut
+from utils import apply_df_filters
 # from schwimmbad import MPIPool, SerialPool
 
 LOADER_DICT = {'sabes': load_sabes, 'shenoy': load_shenoy, 'peanut': load_peanut}
@@ -52,7 +53,7 @@ def check_root(comm):
         else:
             return False
 
-def cleanup_var(root_dir, job_name, submit_file):
+def cleanup_var(root_dir, job_name, dof_file):
 
     to_do = {}
 
@@ -65,19 +66,9 @@ def cleanup_var(root_dir, job_name, submit_file):
         if not 'arg_' in argfile:
             argfiles.append(argfile)
 
-    # Load the submit file to get the data files.
-    name = submit_file.split('/')[-1]    
-    name = os.path.splitext(name)[0]
-    sys.path.append(path)
-    submit_args = importlib.import_module(name)
-
-    # Load each data file and for each set of loader args, get the dof.
-    data_files = submit_args.data_files
-    n_dof = np.zeros((len(data_files), len(submit_args.loader_args)))
-    for i, data_file in enumerate(data_files):
-        for j, loader_arg in enumerate(submit_args.loader_args):
-            dat = LOADER_DICT[submit_args.loader](data_file, loader_arg])
-            n_dof[i, j] = dat['spike_rates'].shape[-1]
+    # Load the dataframe that will tell us how many dof for each VAR model
+    with open(dof_file, 'rb') as f:
+        dof_df = pickle.load(f)
 
     # For each arg file, get the number and then find the
     # directory
@@ -99,15 +90,9 @@ def cleanup_var(root_dir, job_name, submit_file):
         with open(argfile, 'rb') as f:
             args = pickle.load(f)
 
-        # Expected output files
-        # First lookup dof given the data file and loader_args corresponding to this argfile
-        idx1 = data_files.index(args['data_file'])
-        idx2 = next((index for (index, d) in enumerate(submit_args.loader_args) if d == args['loader_args']))
-
-        n_dof = n_dof[idx1, idx2]
-
-        # Scale by the var order
-        n_dof *= args['task_args']['order']
+        dof_ = apply_df_filters(dof_df, data_file=args['data_file'], **args['loader_args'])
+        assert(dof_.shape[0] == 1)
+        n_dof = dof_.iloc[0]['dof']
 
         expected_files = ['%d.dat' % i for i in np.arange(n_dof)]
         data_files = glob.glob('%s/*.dat' % jobdir)

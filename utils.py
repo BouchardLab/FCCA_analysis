@@ -48,6 +48,11 @@ def apply_df_filters(dtfrm, invert=False, **kwargs):
                     filtered_df = filtered_df.loc[np.invert(filtered_df[key].isin(value))]
                 else:
                     filtered_df = filtered_df.loc[filtered_df[key].isin(value)]
+            elif type(value) == str:
+                if invert:
+                    filtered_df = filtered_df.loc[np.invert(value in filtered_df[key])]
+                else:
+                    filtered_df = filtered_df.loc[value in filtered_df[key]]
             else:
                 if invert:
                     filtered_df = filtered_df.loc[filtered_df[key] != value]
@@ -55,7 +60,6 @@ def apply_df_filters(dtfrm, invert=False, **kwargs):
                     filtered_df = filtered_df.loc[filtered_df[key] == value]
 
     return filtered_df
-
 
 
 def gram_schmidt(v0):

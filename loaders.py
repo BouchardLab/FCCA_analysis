@@ -403,6 +403,8 @@ def load_peanut(fpath, epoch, spike_threshold, bin_width=25, boxcox=0.5,
         probes = HPc_probes
     elif region == 'OFC':
         probes = OFC_probes
+    elif region == 'both':
+        probes = list(set(HPc_probes).union(set(OFC_probes)))
 
     spike_times = []
     unit_ids = []

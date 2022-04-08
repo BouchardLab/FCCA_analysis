@@ -27,6 +27,7 @@ def change_data_paths(root_dir, data_path=None, results_path=None):
     # for argfile in argfiles_:
     #     if not 'arg_' in argfile:
     #         argfiles.append(argfile)
+    pdb.set_trace()
     for j, argfile in enumerate(argfiles):
         with open(argfile, 'rb') as f:
             args = pickle.load(f)

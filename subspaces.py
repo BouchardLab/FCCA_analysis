@@ -574,10 +574,175 @@ class SubspaceIdentification():
         Xt = Sigmabart.T @ np.linalg.inv(Tm) @ ymt1[m:, :]
         Xt1 = Sigmabart1.T @ np.linalg.inv(Tm1) @ ymt1
 
-        Xrevt = Sigmat.T @ np.linalg.inv(Tp) @ ypt1[m:, :]
-        Xrevt1 = Sigmat1.T @ np.linalg.inv(Tp1) @ ypt1
+        # Reverse time estimate is not used
 
-        return Xt, Xt1, Xrevt, Xrevt1
+        return Xt, Xt1
 
 class CVSubspaceIdentification():
     pass
+
+class CrossSubspaceIdentification(SubspaceIdentification):
+
+    def identify(self, y, z, order, ccm=None, hankel_toeplitz=None, T=None):
+        dim_y = y.shape[1]
+        dim_z = z.shape[1]
+
+        if T is None:
+            T = self.T
+        if ccm is None:
+            ccm = estimate_autocorrelation(np.hstack([y,z]), 2*T + 2)
+        if hankel_toeplitz is None:
+            # Get Toeplitz, Hankel structures
+            hankel_toeplitz = self.form_hankel_toeplitz(ccm, T, dim_y)
+
+        xt, xt1 = self.get_predictor_space(y, hankel_toeplitz, T, int(order))
+
+        A, C, Cbar, rho_A, rho_C = self.estimator.fit(np.hstack([y[self.T-1:-1, :], z[self.T-1:-1, :]]), xt, xt1, return_residuals=True)
+
+        # Need to correct positive realness
+        if not check_gdare(A, C, Cbar, ccm[0]):
+            #print('pr correction employed')
+            L0, Cbar, Q, R, S = pr_correction_method1(A, C, Cbar, ccm[0], rho_A, rho_C)
+            # B, D = factorize(A, C, Cbar, L0)
+        else:
+            L0 = ccm[0]
+            # Obtain B, D, Q, R from the riccati equation
+            B, D = factorize(A, C, Cbar, L0)
+            Q = B @ B.T
+            R = D @ D.T
+            S = B @ D.T
+        if np.any(np.abs(np.linalg.eigvals(R)) < 1e-12):
+            #print('R not > 0!')
+            R += 1e-6 * np.eye(R.shape[0])
+
+        # Partition C
+        Cy = C[:y.shape[1], :]
+        Cz = C[y.shape[1]:, :]
+
+        return A, Cy, Cz, Cbar, L0, Q, R, S
+
+    def form_hankel_toeplitz(self, ccm, T, dim_y):
+        # Separate into neural data and behavior
+        ccm_y = ccm[:, :dim_y, :dim_y]
+        ccm_z = ccm[:, dim_y:, dim_y:]
+        ccmyz = ccm[:, :dim_y, dim_y:]
+        ccmzy = ccm[:, dim_y:, :dim_y]
+
+        #### Y
+        
+        # T quantities
+        # Tm_y, Tp_y = gen_toeplitz_from_blocks(ccm_y, order=T)
+        
+        # T + 1 quantities
+        Tm1_y, Tp1_y = gen_toeplitz_from_blocks(ccm_y, order=T + 1)
+        Lm1_y = np.linalg.cholesky(Tm1_y)
+        # Lp1_y = np.linalg.cholesky(Tp1_y)
+
+        ### Z
+        # Tm_z, Tp_z = gen_toeplitz_from_blocks(ccm_z, order=T)
+        
+        # T + 1 quantities
+        Tm1_z, Tp1_z = gen_toeplitz_from_blocks(ccm_z, order=T + 1)
+        # Lm1_z = np.linalg.cholesky(Tm1_z)
+        Lp1_z = np.linalg.cholesky(Tp1_z)
+
+        # Project future of z onto y, therefore using yz block
+        H1 = gen_hankel_from_blocks(ccmzy, order1=T + 1, order2=T + 1) 
+        H1norm = np.linalg.inv(Lp1_z) @ H1 @ np.linalg.inv(Lm1_y).T
+        Ut1, St1, Vht1 = np.linalg.svd(H1norm)
+
+        return Ut1, St1, Vht1, Tm1_y, Lm1_y
+
+    # Follow chapter 13 of LP except for in how we form the autocorrelation matrices
+    def get_predictor_space(self, y, hankel_toeplitz, T, truncation_order):
+
+        m = y.shape[1]
+        
+
+        Ut1, St1, Vht1, Tm1_y, Lm1_y = hankel_toeplitz
+
+        St1 = np.diag(St1[0:truncation_order])
+        Ut1 = Ut1[:, 0:truncation_order]
+        Vht1 = Vht1[0:truncation_order, :]
+
+        Sigmabart1 = Lm1_y @ Vht1.T @ scipy.linalg.sqrtm(St1) 
+        Sigmabart = Sigmabart1[:-m, :]
+
+        # Form the predictor spaces
+        ypt1 = form_lag_matrix(y, T + 1).T
+        ymt1 = flip_blocks(ypt1, T + 1)
+
+        Xt = Sigmabart.T @ np.linalg.inv(Tm1_y) @ ymt1[m:, :]
+        Xt1 = Sigmabart1.T @ np.linalg.inv(Tm1_y) @ ymt1
+
+        # Reverse time estimate is not used
+
+        return Xt, Xt1
+
+# Second implementation that directly implements the method described in Nature Neuroscience paper
+class BRSSID(SubspaceIdentification):
+
+    def identify(self, y, z, order, ccm=None, hankel_toeplitz=None, T=None):
+
+        # Compres everything into get_predictor_space
+        xt, xt1 = self.get_predictor_space(y, z, T, int(order))
+
+        A, C, Cbar, rho_A, rho_C = self.estimator.fit(np.hstack([y[T:-T + 1], z[T:-T + 1]]), xt, xt1, return_residuals=True)
+
+        # # Need to correct positive realness
+        # if not check_gdare(A, C, Cbar, ccm[0]):
+        #     #print('pr correction employed')
+        #     L0, Cbar, Q, R, S = pr_correction_method1(A, C, Cbar, ccm[0], rho_A, rho_C)
+        #     # B, D = factorize(A, C, Cbar, L0)
+        # else:
+        #     L0 = ccm[0]
+        #     # Obtain B, D, Q, R from the riccati equation
+        #     B, D = factorize(A, C, Cbar, L0)
+        #     Q = B @ B.T
+        #     R = D @ D.T
+        #     S = B @ D.T
+        # if np.any(np.abs(np.linalg.eigvals(R)) < 1e-12):
+        #     #print('R not > 0!')
+        #     R += 1e-6 * np.eye(R.shape[0])
+
+        # Partition C
+        Cy = C[:y.shape[1], :]
+        Cz = C[y.shape[1]:, :]
+
+        return A, Cy, Cz    
+
+    def form_hankel_toeplitz(self, ccm, T, dim_y):
+        pass
+
+    def get_predictor_space(self, y, z, T, order):
+
+        ydim = y.shape[1]
+        zdim = z.shape[1]
+
+        yt = form_lag_matrix(y, 2*T)
+        zt = form_lag_matrix(z, 2*T)
+
+        # "Past" of y and "Future" of z
+        ypast = yt[:, :T*ydim].T
+        zfut = zt[:, -T*zdim:].T
+
+        # Eq 10 - 12 in BRSSID supplement
+        Z = zfut @ ypast.T @ np.linalg.inv(ypast @ ypast.T) @ ypast
+        U, S, Vh = np.linalg.svd(Z)
+        # Truncate
+        U = U[:, :order]
+        S = S[:order]
+
+        Gamma_t = U @ np.diag(np.sqrt(S))
+        Xt = np.linalg.pinv(Gamma_t) @ Z
+        
+        # Remove rows of zfut
+        zfut_m = zfut[zdim:]
+        # Remove rows of Gamma
+        Gamma_t1 = Gamma_t[:-zdim]
+
+        Xt1 = np.linalg.pinv(Gamma_t1) @ zfut_m    
+        
+        return Xt, Xt1 
+
+

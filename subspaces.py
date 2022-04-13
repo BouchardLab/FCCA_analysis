@@ -682,7 +682,7 @@ class CrossSubspaceIdentification(SubspaceIdentification):
 # Second implementation that directly implements the method described in Nature Neuroscience paper
 class BRSSID(SubspaceIdentification):
 
-    def identify(self, y, z, order, ccm=None, hankel_toeplitz=None, T=None):
+    def identify(self, y, z, order, T):
 
         # Compres everything into get_predictor_space
         xt, xt1 = self.get_predictor_space(y, z, T, int(order))

@@ -711,8 +711,8 @@ class BRSSID(SubspaceIdentification):
 
         # Also calculate r2 from residuals  
         rho_z = rho_C[:, -z.shape[1]:]
-        tss = z - np.mean(z, axis=0)
-        r2_z = 1 - np.trace(rho_z.T @ rho_z)/np.trace(z.T @ z)
+        zcent = z - np.mean(z, axis=0)
+        r2_z = 1 - np.trace(rho_z.T @ rho_z)/np.trace(zcent.T @ zcent)
 
         return A, Cy, Cz, r2_z
 

@@ -709,7 +709,12 @@ class BRSSID(SubspaceIdentification):
         Cy = C[:y.shape[1], :]
         Cz = C[y.shape[1]:, :]
 
-        return A, Cy, Cz    
+        # Also calculate r2 from residuals  
+        rho_z = rho_C[:, -z.shape[1]:]
+        tss = z - np.mean(z, axis=0)
+        r2_z = 1 - np.trace(rho_z.T @ rho_z)/np.trace(z.T @ z)
+
+        return A, Cy, Cz, r2_z
 
     def form_hankel_toeplitz(self, ccm, T, dim_y):
         pass

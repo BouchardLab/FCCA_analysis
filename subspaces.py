@@ -680,80 +680,29 @@ class CrossSubspaceIdentification(SubspaceIdentification):
         return Xt, Xt1
 
 # Second implementation that directly implements the method described in Nature Neuroscience paper
-class BRSSID(SubspaceIdentification):
+def brssid(y, z, order, T):
+    ydim = y.shape[1]
+    zdim = z.shape[1]
 
-    def identify(self, y, z, order, T):
+    yt = form_lag_matrix(y, 2*T)
+    zt = form_lag_matrix(z, 2*T)
 
-        # Compres everything into get_predictor_space
-        xt, xt1 = self.get_predictor_space(y, z, T, int(order))
+    # "Past" of y and "Future" of z
+    ypast = yt[:, :T*ydim]
+    zfut = zt[:, -T*zdim:]
 
-        A, C, Cbar, rho_A, rho_C = self.estimator.fit(np.hstack([y[T:-T + 1], z[T:-T + 1]]), xt, xt1, return_residuals=True)
+    Z = scipy.linalg.lstsq(ypast, zfut)[0].T @ ypast.T
 
-        # # Need to correct positive realness
-        # if not check_gdare(A, C, Cbar, ccm[0]):
-        #     #print('pr correction employed')
-        #     L0, Cbar, Q, R, S = pr_correction_method1(A, C, Cbar, ccm[0], rho_A, rho_C)
-        #     # B, D = factorize(A, C, Cbar, L0)
-        # else:
-        #     L0 = ccm[0]
-        #     # Obtain B, D, Q, R from the riccati equation
-        #     B, D = factorize(A, C, Cbar, L0)
-        #     Q = B @ B.T
-        #     R = D @ D.T
-        #     S = B @ D.T
-        # if np.any(np.abs(np.linalg.eigvals(R)) < 1e-12):
-        #     #print('R not > 0!')
-        #     R += 1e-6 * np.eye(R.shape[0])
+    svd = TruncatedSVD(n_components=order)
+    svd.fit(Z.T)
 
-        # Partition C
-        Cy = C[:y.shape[1], :]
-        Cz = C[y.shape[1]:, :]
+    U = svd.components_.T
+    Gamma_t = U @ np.diag(np.sqrt(svd.singular_values_))
+    Xt = np.linalg.pinv(Gamma_t) @ Z
 
-        # Also calculate r2 from residuals  
-        rho_z = rho_C[:, -z.shape[1]:]
-        zcent = z - np.mean(z, axis=0)
-        r2_z = 1 - np.trace(rho_z.T @ rho_z)/np.trace(zcent.T @ zcent)
+    linmodel = LinearRegression().fit(Xt.T, z[:-2*T + 1])
+    r2_z = linmodel.score(Xt.T, z[:-9])
 
-        return A, Cy, Cz, r2_z
-
-    def form_hankel_toeplitz(self, ccm, T, dim_y):
-        pass
-
-    def get_predictor_space(self, y, z, T, order):
-
-        ydim = y.shape[1]
-        zdim = z.shape[1]
-
-        yt = form_lag_matrix(y, 2*T)
-        zt = form_lag_matrix(z, 2*T)
-
-        # "Past" of y and "Future" of z
-        ypast = yt[:, :T*ydim]
-        zfut = zt[:, -T*zdim:]
-
-        # Eq 10 - 12 in BRSSID supplement
-
-        # For memory efficiency, use an OLS solution here
-        Z = scipy.linalg.lstsq(ypast, zfut)[0].T @ ypast.T
-
-        svd = TruncatedSVD(n_components=order)
-        svd.fit(Z.T)
-
-        U = svd.components_.T
-        Gamma_t = U @ np.diag(np.sqrt(svd.singular_values_))
-        Xt = np.linalg.pinv(Gamma_t) @ Z
-
-        # Remove rows of zfut
-        zfut_m = zfut[:, zdim:]
-        # Append a row to y
-        ypast_p = yt[:, :(T + 1)*ydim]
-        Zm = scipy.linalg.lstsq(ypast_p, zfut_m)[0].T @ ypast_p.T
-
-        # Remove rows of Gamma
-        Gamma_t1 = Gamma_t[:-zdim]
-
-        Xt1 = np.linalg.pinv(Gamma_t1) @ Zm
-        
-        return Xt, Xt1 
-
-
+    linmodel = LinearRegression().fit(Xt.T, y[:-2*T + 1])
+    Cy = linmodel.coef_
+    return r2_z, Cy

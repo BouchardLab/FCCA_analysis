@@ -7,8 +7,8 @@ from numpy.lib.stride_tricks import as_strided
 import scipy 
 import pdb
 import pickle
-from sklearn.linear_model import LinearRegression
-from sklearn.linear_model import RidgeCV
+from sklearn.linear_model import LinearRegression, RidgeCV
+from sklearn.decomposition import TruncatedSVD
 
 from riccati import discrete_generalized_riccati, discrete_riccati, check_gdare
 from cov_estimation import estimate_autocorrelation 
@@ -728,25 +728,31 @@ class BRSSID(SubspaceIdentification):
         zt = form_lag_matrix(z, 2*T)
 
         # "Past" of y and "Future" of z
-        ypast = yt[:, :T*ydim].T
-        zfut = zt[:, -T*zdim:].T
+        ypast = yt[:, :T*ydim]
+        zfut = zt[:, -T*zdim:]
 
         # Eq 10 - 12 in BRSSID supplement
-        Z = zfut @ ypast.T @ np.linalg.inv(ypast @ ypast.T) @ ypast
-        U, S, Vh = np.linalg.svd(Z)
-        # Truncate
-        U = U[:, :order]
-        S = S[:order]
 
-        Gamma_t = U @ np.diag(np.sqrt(S))
+        # For memory efficiency, use an OLS solution here
+        Z = scipy.linalg.lstsq(ypast, zfut)[0].T @ ypast.T
+
+        svd = TruncatedSVD(n_components=order)
+        svd.fit(Z.T)
+
+        U = svd.components_.T
+        Gamma_t = U @ np.diag(np.sqrt(svd.singular_values_))
         Xt = np.linalg.pinv(Gamma_t) @ Z
-        
+
         # Remove rows of zfut
-        zfut_m = zfut[zdim:]
+        zfut_m = zfut[:, zdim:]
+        # Append a row to y
+        ypast_p = yt[:, :(T + 1)*ydim]
+        Zm = scipy.linalg.lstsq(ypast_p, zfut_m)[0].T @ ypast_p.T
+
         # Remove rows of Gamma
         Gamma_t1 = Gamma_t[:-zdim]
 
-        Xt1 = np.linalg.pinv(Gamma_t1) @ zfut_m    
+        Xt1 = np.linalg.pinv(Gamma_t1) @ Zm
         
         return Xt, Xt1 
 

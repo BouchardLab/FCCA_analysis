@@ -39,19 +39,29 @@ def standardize(X):
     return Xstd
 
 # Turn position into velocity and acceleration with finite differences
-def expand_state_space(Z, X):
+def expand_state_space(Z, X, vel=True, acc=True):
 
     concat_state_space = []
     for i, z in enumerate(Z):
-        pos = z[2:, :]
-        vel = np.diff(z, 1, axis=0)[1:, :]
-        acc = np.diff(z, 2, axis=0)
 
-        # Trim off 2 samples from the neural data to match lengths
-        X[i] = X[i][2:, :]
+        if vel and acc:
+            pos = z[2:, :]
+            vel = np.diff(z, 1, axis=0)[1:, :]
+            acc = np.diff(z, 2, axis=0)
 
-        concat_state_space.append(np.concatenate((pos, vel, acc), axis=-1))
-        
+            # Trim off 2 samples from the neural data to match lengths
+            X[i] = X[i][2:, :]
+
+            concat_state_space.append(np.concatenate((pos, vel, acc), axis=-1))
+        elif vel:
+            pos = z[1:, :]
+            vel = np.diff(z, 1, axis=0)
+            # Trim off only one sample in this case
+            X[i] = X[i][1:, :]
+            concat_state_space.append(np.concatenate((pos, vel), axis=-1))
+        else:
+            concat_state_space.append(z)
+
     return concat_state_space, X
     
 def KF(X, Z):
@@ -144,7 +154,7 @@ def kf_decoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=
 
     return kf_r2_pos, kf_r2_vel, kf_r2_acc, kf
 
-def lr_preprocess(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window):
+def lr_preprocess(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window, include_velocity, include_acc):
     # If no trial structure is present, convert to a list for easy coding
     if np.ndim(Xtrain) == 2:
         Xtrain = [Xtrain]
@@ -181,8 +191,9 @@ def lr_preprocess(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_wind
     Ztest = [z[:x.shape[0], :] for z, x in zip(Ztest, Xtest)]
 
     # Expand state space to include velocity and acceleration
-    Ztrain, Xtrain = expand_state_space(Ztrain, Xtrain)
-    Ztest, Xtest = expand_state_space(Ztest, Xtest)
+    if np.any([include_velocity, include_acc]):
+        Ztrain, Xtrain = expand_state_space(Ztrain, Xtrain, include_velocity, include_acc)
+        Ztest, Xtest = expand_state_space(Ztest, Xtest, include_velocity, include_acc)
 
     # Flatten trial structure as regression will not care about it
     Xtrain = np.concatenate(Xtrain)
@@ -193,9 +204,10 @@ def lr_preprocess(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_wind
     return Xtest, Xtrain, Ztest, Ztrain
 
 # Sticking with consistent nomenclature, Z is the behavioral data and X is the neural data
-def lr_encoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=1):
+def lr_encoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=1, include_velocity=True, include_acc=False):
 
-    Xtest, Xtrain, Ztest, Ztrain = lr_preprocess(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, 1)
+    # By default, we look only at pos and vel
+    Xtest, Xtrain, Ztest, Ztrain = lr_preprocess(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, 1, include_velocity, include_acc)
 
     # Apply the decoding window to the behavioral data
     # Ztrain, _ = form_lag_matrix(Ztrain, decoding_window)
@@ -217,18 +229,26 @@ def lr_encoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=
     r2 = r2_score(Xtest, Xpred)
     return r2, encodingregressor
 
-def lr_decoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=1):
+def lr_decoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=1, include_velocity=True, include_acc=True):
 
     behavior_dim = Ztrain[0].shape[-1]
 
-    Xtest, Xtrain, Ztest, Ztrain = lr_preprocess(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window)
+    Xtest, Xtrain, Ztest, Ztrain = lr_preprocess(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window, include_velocity, include_acc)
     decodingregressor = LinearRegression(normalize=True, fit_intercept=True)
 
     decodingregressor.fit(Xtrain, Ztrain)
     Zpred = decodingregressor.predict(Xtest)
 
-    lr_r2_pos = r2_score(Ztest[..., 0:behavior_dim], Zpred[..., 0:behavior_dim])
-    lr_r2_vel = r2_score(Ztest[..., behavior_dim:2*behavior_dim], Zpred[..., behavior_dim:2*behavior_dim])
-    lr_r2_acc = r2_score(Ztest[..., 2*behavior_dim:], Zpred[..., 2*behavior_dim:])
+    if include_velocity and include_acc:
+        lr_r2_pos = r2_score(Ztest[..., 0:behavior_dim], Zpred[..., 0:behavior_dim])
+        lr_r2_vel = r2_score(Ztest[..., behavior_dim:2*behavior_dim], Zpred[..., behavior_dim:2*behavior_dim])
+        lr_r2_acc = r2_score(Ztest[..., 2*behavior_dim:], Zpred[..., 2*behavior_dim:])
 
-    return lr_r2_pos, lr_r2_vel, lr_r2_acc, decodingregressor
+        return lr_r2_pos, lr_r2_vel, lr_r2_acc, decodingregressor
+    elif include_velocity:
+        lr_r2_pos = r2_score(Ztest[..., 0:behavior_dim], Zpred[..., 0:behavior_dim])
+        lr_r2_vel = r2_score(Ztest[..., behavior_dim:2*behavior_dim], Zpred[..., behavior_dim:2*behavior_dim])
+        return lr_r2_pos, lr_r2_vel, decodingregressor
+    else:
+        lr_r2_pos = r2_score(Ztest, Zpred)
+        return lr_r2_pos, decodingregressor

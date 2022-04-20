@@ -26,13 +26,13 @@ from dca.methods_comparison import SlowFeatureAnalysis as SFA
 from schwimmbad import MPIPool, SerialPool
 
 #from decoders import kf_dim_analysis
-from loaders import load_sabes, load_shenoy, load_peanut
+from loaders import load_sabes, load_shenoy, load_peanut, load_cv
 from mpi_loaders import mpi_load_shenoy
 from decoders import kf_decoder, lr_decoder
 import pdb
 import glob
 
-LOADER_DICT = {'sabes': load_sabes, 'shenoy': mpi_load_shenoy, 'peanut': load_peanut}
+LOADER_DICT = {'sabes': load_sabes, 'shenoy': mpi_load_shenoy, 'peanut': load_peanut, 'cv':load_cv}
 DECODER_DICT = {'lr': lr_decoder, 'kf': kf_decoder}
 
 class PCA_wrapper():
@@ -67,7 +67,7 @@ def prune_dimreduc_tasks(tasks, results_folder):
 
     to_do = []
     for task in tasks:
-        train_test_tuple, dim, lag, method, method_args, results_folder = task
+        train_test_tuple, dim, method, method_args, results_folder = task
         fold_idx, train_idxs, test_idxs = train_test_tuple
 
         if (dim, fold_idx) not in dim_and_folds:
@@ -245,7 +245,7 @@ class PoolWorker():
         else:
             comm = None             
 
-        train_test_tuple, dim, lag, method, method_args, results_folder = task_tuple
+        train_test_tuple, dim, method, method_args, results_folder = task_tuple
         fold_idx, train_idxs, test_idxs = train_test_tuple
         print('Dim: %d, Fold idx: %d' % (dim, fold_idx))
 
@@ -272,11 +272,6 @@ class PoolWorker():
             # X_mean = np.concatenate(X_train).mean(axis=0, keepdims=True)
             # X_train_ctd = np.array([Xi - X_mean for Xi in X_train])
 
-            if np.ndim(X_train) == 2:
-                X_train = form_lag_matrix(X_train, lag)
-            else:
-                X_train = np.array([form_lag_matrix(xx, lag) for xx in X_train])
-
             # Fit OLS VAR, DCA, PCA, and SFA
             dimreducmodel = DIMREDUC_DICT[method](d=dim, **method_args)
             dimreducmodel.fit(X_train)
@@ -289,7 +284,6 @@ class PoolWorker():
         results_dict['fold_idx'] = fold_idx
         results_dict['train_idxs'] = train_idxs
         results_dict['test_idxs'] = test_idxs
-        results_dict['lag'] = 0
         results_dict['dimreduc_method'] = method
         results_dict['dimreduc_args'] = method_args
         results_dict['coef'] = coef
@@ -327,7 +321,6 @@ class PoolWorker():
         # Project the (train and test) data onto the subspace and train and score the requested decoder
         train_idxs = dimreduc_results[dimreduc_idx]['train_idxs']
         test_idxs = dimreduc_results[dimreduc_idx]['test_idxs']
-        lag = dimreduc_results[dimreduc_idx]['lag']
 
         print(X.shape)
         print(Y.shape)
@@ -338,12 +331,12 @@ class PoolWorker():
         Xtrain = X[train_idxs, ...]
         Xtest = X[test_idxs, ...]
 
-        if np.ndim(Xtrain) == 2:
-            Xtrain = form_lag_matrix(Xtrain, lag)
-            Xtest = form_lag_matrix(Xtest, lag)
-        else:
-            Xtrain = np.array([form_lag_matrix(xx, lag) for xx in Xtrain])
-            Xtest = np.array([form_lag_matrix(xx, lag) for xx in Xtest])
+        # if np.ndim(Xtrain) == 2:
+        #     Xtrain = form_lag_matrix(Xtrain, lag)
+        #     Xtest = form_lag_matrix(Xtest, lag)
+        # else:
+        #     Xtrain = np.array([form_lag_matrix(xx, lag) for xx in Xtrain])
+        #     Xtest = np.array([form_lag_matrix(xx, lag) for xx in Xtest])
 
         Xtrain = Xtrain @ coef_
         Xtest = Xtest @ coef_
@@ -452,7 +445,7 @@ def parametric_dimreduc_(X, dim_vals,
 
 
 def dimreduc_(dim_vals, 
-              n_folds, comm, lag,
+              n_folds, comm,
               method, method_args, 
               split_ranks, results_file,
               resume=False):
@@ -480,7 +473,7 @@ def dimreduc_(dim_vals,
         data_tasks = [(idx,) + train_test_split for idx, train_test_split
                     in enumerate(train_test_idxs)]    
         tasks = itertools.product(data_tasks, dim_vals)
-        tasks = [task + (lag, method, method_args, results_folder) for task in tasks]
+        tasks = [task + (method, method_args, results_folder) for task in tasks]
         # Check which tasks have already been completed
         if resume:
             tasks = prune_dimreduc_tasks(tasks, results_folder)
@@ -496,7 +489,7 @@ def dimreduc_(dim_vals,
             data_tasks = [(idx,) + train_test_split for idx, train_test_split
                         in enumerate(train_test_idxs)]    
             tasks = itertools.product(data_tasks, dim_vals)
-            tasks = [task + (lag, method, method_args, results_folder) for task in tasks]
+            tasks = [task + (method, method_args, results_folder) for task in tasks]
             # Check which tasks have already been completed
             if resume:
                 tasks = prune_dimreduc_tasks(tasks, results_folder)
@@ -643,8 +636,6 @@ def main(cmd_args, args):
         estimator = VAR(comm=comm, ncomms=ncomms, **args['task_args'])  
         # Need to do distributed save and provide filepath
         t0 = time.time()
-
-
         estimator.fit(X[train_idxs])
 
         # Need to save at this point as the var object did not
@@ -658,7 +649,6 @@ def main(cmd_args, args):
         split_ranks = comm_split(comm, ncomms)
         dimreduc_(dim_vals = args['task_args']['dim_vals'],
                   n_folds = args['task_args']['n_folds'], 
-                  lag=args['task_args']['lag'],
                   method = args['task_args']['dimreduc_method'],
                   method_args = args['task_args']['dimreduc_args'],
                   comm=comm, split_ranks=split_ranks,

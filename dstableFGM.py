@@ -6,6 +6,11 @@ from scipy.linalg import polar
 
 def graddstableform(A, S, U, B, return_grad=False):
 
+    # Throw away any imaginary components that leak in
+    S = np.real(S)
+    U = np.real(U)
+    B = np.real(B)
+
     n = A.shape[0]
     At = torch.tensor(A, requires_grad=True)
     St = torch.tensor(S, requires_grad=True)
@@ -63,6 +68,10 @@ def dstable_descent(A, maxiter=100, inneriter=20, step_reduc=1.5, tol=1e-3, posd
     i = 0
     delta_e = np.inf
     while i < maxiter and delta_e > tol: 
+        # Throw away any imaginary components that leak in
+        S = np.real(S)
+        U = np.real(U)
+        B = np.real(B)
 
         _, gS, gU, gB = graddstableform(A, S, U, B, return_grad=True)
 
@@ -237,7 +246,7 @@ def dstableFGM(A=None, maxiter=int(1e3), posdef=1e-6, astab=1e-6, display=1,
             
         A_ = np.linalg.inv(Ys) @ Yu @ Yb @ Ys
         loss = np.linalg.norm(A - A_)
-        pdb.set_trace()
+
         # Display
         if display:
             if i % ndisplay == 0:

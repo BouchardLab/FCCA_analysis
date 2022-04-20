@@ -15,6 +15,31 @@ def calc_loadings(U, d=1):
     loadings /= np.max(loadings)
     return loadings
 
+# Calculate loadings when 2 rectangular matrices are cascaded 
+# (e.g. dimreduc + decoding)
+# U1: matrix of shape (n_neurons * d1, dim)
+# U2: matrix of shape (dim * d2, dim2)
+def calc_cascaded_loadings(U1, U2, d1=1, d2=1):
+
+    # Simply multiply the matrices and then calculate the leverage score. 
+    # Only sensible case if is d2 > dim, in which case we reshape and multiply
+    # several times
+    if d2 * U2.shape[0] > U1.shape[1]:
+        U2 = np.reshape(U2, (d2, U1.shape[1], -1))
+        V = np.array([U1 @ U2_ for U2_ in U2])
+
+        # Sum over final index, and reshaping of d2//d1
+        U = np.sum(np.sum(np.power(np.abs(V), 2), axis=-1), axis=0)
+        # Sum over d1
+        U = np.reshape(U, (d1, -1))
+        loadings = np.sum(U, axis=0)
+        loadings /= np.max(loadings)
+        return loadings
+    elif d2 * U2.shape[0] == U1.shape[1]:
+        return calc_loadings(U1 @ U2, d=d1)
+    else:
+        raise ValueError("Don't know what to do with this case")
+
 def filter_by_dict(df, root_key, dict_filter):
 
     col = df[root_key].values

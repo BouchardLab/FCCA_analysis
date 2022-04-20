@@ -168,6 +168,21 @@ def postprocess_spikes(spike_times, T, bin_width, boxcox, filter_fn, filter_kwar
 
     return spike_rates
 
+def load_cv(file_path):
+
+    f = h5py.File(file_path, 'r')
+    X = np.squeeze(f['X'])
+    y = np.array(f['y'])
+    # Remove 'thee'
+    theeless = np.where(y != b'thee')[0]
+    X = X[theeless, ...]
+    y = y[theeless]    
+    dat = {}
+    dat['spike_rates'] = X
+    dat['behavior'] = y
+
+    return dat
+
 # Loader that operates on the files provided by the Shenoy lab
 def load_shenoy(data_path, bin_width, boxcox, filter_fn, filter_kwargs, 
                 spike_threshold=None, trial_threshold=0.5, tw=(-250, 550), 
@@ -272,7 +287,7 @@ def load_shenoy(data_path, bin_width, boxcox, filter_fn, filter_kwargs,
     return dat
 
 def load_sabes(filename, bin_width=50, boxcox=0.5, filter_fn='none', filter_kwargs={}, spike_threshold=100,
-               std_behavior=False, region='M1', get_dof_only=False, **kwargs):
+               std_behavior=False, region='M1', high_pass=True, **kwargs):
 
     # Convert bin width to s
     bin_width /= 1000
@@ -308,7 +323,6 @@ def load_sabes(filename, bin_width=50, boxcox=0.5, filter_fn='none', filter_kwar
 
         spike_times = np.zeros((n_sorted_units - 1, len(indices))).astype(np.object)
 
-
         for i, chan_idx in enumerate(indices):
             for unit_idx in range(1, n_sorted_units): # ignore hash
                 spike_times_ = f[f["spikes"][unit_idx, chan_idx]][()]
@@ -324,7 +338,7 @@ def load_sabes(filename, bin_width=50, boxcox=0.5, filter_fn='none', filter_kwar
         # Total length of the time series
         T = t[-1] - t[0]
         spike_rates = postprocess_spikes(spike_times, T, bin_width, boxcox,
-                                         filter_fn, filter_kwargs, spike_threshold, high_pass=True)
+                                         filter_fn, filter_kwargs, spike_threshold, high_pass=high_pass)
 
         dat['spike_rates'] = spike_rates
 

@@ -3,7 +3,7 @@ import os
 import numpy as np
 
 #script_path = '/global/homes/a/akumar25/repos/localization/batch_analysis_sabes.py'
-
+f = 
 script_path = '/home/akumar/nse/neural_control/batch_analysis.py'
 
 desc = 'Optimality Principle based dimreduc on Peanut Data, methods operate on the autocorrelation sequence'

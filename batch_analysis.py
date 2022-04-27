@@ -142,17 +142,26 @@ def consolidate(results_folder, results_file, comm):
             f.write(pickle.dumps(results_dict_list))
 
 def load_data(loader, data_file, loader_args, comm, broadcast_behavior=False):
+
+    print(loader_args)
     if comm is None:
         dat = LOADER_DICT[loader](data_file, **loader_args)
         spike_rates = np.squeeze(dat['spike_rates'])
+
     else:
         if comm.rank == 0:
             dat = LOADER_DICT[loader](data_file, **loader_args)
-            spike_rates = np.ascontiguousarray(np.squeeze(dat['spike_rates']), dtype=float)
+            if dat['spike_rates'].dtype == 'object':
+                spike_rates = dat['spike_rates']
+            else:
+                spike_rates = np.ascontiguousarray(np.squeeze(dat['spike_rates']), dtype=float)
         else:
             spike_rates = None
 
-        spike_rates = Bcast_from_root(spike_rates, comm)
+        try:
+            spike_rates = Bcast_from_root(spike_rates, comm)
+        except KeyError:
+            spike_rates = comm.bcast(spike_rates)
 
     # # Make global variable - saves memory when using Schwimmbad as the data can be accessed by workers without
     # being sent again (which duplicates it)
@@ -249,11 +258,12 @@ class PoolWorker():
         fold_idx, train_idxs, test_idxs = train_test_tuple
         print('Dim: %d, Fold idx: %d' % (dim, fold_idx))
 
-        # X is either of shape (n_time, n_dof) or (n_trials, n_time, n_dof)
+        # X is either of shape (n_time, n_dof) or (n_trials,). In the latter case
         X = globals()['X']
 
+
         # dim_val is too high
-        if X.shape[1] <= dim:
+        if X[0].shape[1] <= dim:
             results_dict = {}
             results_dict['dim'] = dim
             results_dict['fold_idx'] = fold_idx
@@ -267,14 +277,20 @@ class PoolWorker():
         else:
             X_train = X[train_idxs, ...]
 
-            # Save memory
-            X_train -= np.concatenate(X_train).mean(axis=0, keepdims=True)
-            # X_mean = np.concatenate(X_train).mean(axis=0, keepdims=True)
-            # X_train_ctd = np.array([Xi - X_mean for Xi in X_train])
+            if X.dtype == 'object':
+                # subtract the cross condition mean
+                cross_cond_mean = np.mean([np.mean(x_, axis=0) for x_ in X_train], axis=0)      
+                X_train = [x_ - cross_cond_mean for x_ in X_train]
+            else:            
+                # Save memory
+                X_train -= np.concatenate(X_train).mean(axis=0, keepdims=True)
+                # X_mean = np.concatenate(X_train).mean(axis=0, keepdims=True)
+                # X_train_ctd = np.array([Xi - X_mean for Xi in X_train])
 
             # Fit OLS VAR, DCA, PCA, and SFA
             dimreducmodel = DIMREDUC_DICT[method](d=dim, **method_args)
             dimreducmodel.fit(X_train)
+
             coef = dimreducmodel.coef_
             score = dimreducmodel.score()
             
@@ -322,14 +338,11 @@ class PoolWorker():
         train_idxs = dimreduc_results[dimreduc_idx]['train_idxs']
         test_idxs = dimreduc_results[dimreduc_idx]['test_idxs']
 
-        print(X.shape)
-        print(Y.shape)
+        Ytrain = Y[train_idxs]
+        Ytest = Y[test_idxs]
 
-        Ytrain = Y[train_idxs, ...]
-        Ytest = Y[test_idxs, ...]
-
-        Xtrain = X[train_idxs, ...]
-        Xtest = X[test_idxs, ...]
+        Xtrain = X[train_idxs]
+        Xtest = X[test_idxs]
 
         # if np.ndim(Xtrain) == 2:
         #     Xtrain = form_lag_matrix(Xtrain, lag)
@@ -337,9 +350,14 @@ class PoolWorker():
         # else:
         #     Xtrain = np.array([form_lag_matrix(xx, lag) for xx in Xtrain])
         #     Xtest = np.array([form_lag_matrix(xx, lag) for xx in Xtest])
-
-        Xtrain = Xtrain @ coef_
-        Xtest = Xtest @ coef_
+        if np.ndim(Xtrain) == 2:
+            Xtrain = Xtrain @ coef_
+            Xtest = Xtest @ coef_
+        else:
+            Xtrain = [xx @ coef_ for xx in Xtrain]
+            Xtest = [xx @ coef_ for xx in Xtest]
+            Ytrain = [yy for yy in Ytrain]
+            Ytest = [yy for yy in Ytest]
 
         r2_pos, r2_vel, r2_acc, decoder_obj = DECODER_DICT[decoder['method']](Xtest, Xtrain, Ytest, Ytrain, **decoder['args'])
 

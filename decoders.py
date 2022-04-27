@@ -39,12 +39,12 @@ def standardize(X):
     return Xstd
 
 # Turn position into velocity and acceleration with finite differences
-def expand_state_space(Z, X, vel=True, acc=True):
+def expand_state_space(Z, X, include_vel=True, include_acc=True):
 
     concat_state_space = []
     for i, z in enumerate(Z):
-
-        if vel and acc:
+        if include_vel and include_acc:
+            print(z.shape)
             pos = z[2:, :]
             vel = np.diff(z, 1, axis=0)[1:, :]
             acc = np.diff(z, 2, axis=0)
@@ -53,7 +53,7 @@ def expand_state_space(Z, X, vel=True, acc=True):
             X[i] = X[i][2:, :]
 
             concat_state_space.append(np.concatenate((pos, vel, acc), axis=-1))
-        elif vel:
+        elif inlclude_vel:
             pos = z[1:, :]
             vel = np.diff(z, 1, axis=0)
             # Trim off only one sample in this case

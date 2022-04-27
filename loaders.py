@@ -8,14 +8,22 @@ from tqdm import tqdm
 from scipy import io
 from scipy.stats import binned_statistic
 from scipy.interpolate import interp1d
-from scipy.signal import resample,  convolve
+from scipy.signal import resample,  convolve, get_window
 from scipy.ndimage import convolve1d, gaussian_filter1d
 from copy import deepcopy
 import pdb
 
+from segmentation import reach_segment_sabes
+
+
 from pynwb import NWBHDF5IO
 
-FILTER_DICT = {'gaussian':gaussian_filter1d, 'none': lambda x, **kwargs: x}
+def filter_window(signal, window_name='hann', window_params=(), window_length=10):
+    window = get_window((window_name, *window_params), window_length)
+    signal = convolve1d(signal, window)
+    return signal
+
+FILTER_DICT = {'gaussian':gaussian_filter1d, 'none': lambda x, **kwargs: x, 'window': filter_window}
 
 def moving_center(X, n, axis=0):
     if n % 2 == 0:
@@ -145,13 +153,16 @@ def postprocess_spikes(spike_times, T, bin_width, boxcox, filter_fn, filter_kwar
                 spike_counts = np.array([(np.power(spike_count, boxcox) - 1)/boxcox 
                                          for spike_count in spike_counts])
 
-            # Filter the resulting spike counts
-            spike_rates_ = FILTER_DICT[filter_fn](spike_counts.astype(np.float), **filter_kwargs)
+            # Filter only if we have to, otherwise vectorize the process
+            if ragged_trials:
+                # Filter the resulting spike counts
+                spike_rates_ = FILTER_DICT[filter_fn](spike_counts.astype(np.float), **filter_kwargs)
 
-            # High pass to remove long term trends (needed for sabes data)
-            if high_pass:
-                spike_rates_ = moving_center(spike_rates_, 600)
-
+                # High pass to remove long term trends (needed for sabes data)
+                if high_pass:
+                    spike_rates_ = moving_center(spike_rates_, 600)
+            else:
+                spike_rates_ = spike_counts
             spike_rates[i, j] = spike_rates_
 
     # Filter out bad units
@@ -164,6 +175,12 @@ def postprocess_spikes(spike_times, T, bin_width, boxcox, filter_fn, filter_kwar
     if ragged_trials:
         spike_rates = [np.array([spike_rates[i, j] for j in range(spike_rates.shape[1])]).T for i in range(spike_rates.shape[0])]
     else:
+        # Filter the resulting spike counts
+        spike_rates = FILTER_DICT[filter_fn](spike_rates, **filter_kwargs)
+        # High pass to remove long term trends (needed for sabes data)
+        if high_pass:
+            spike_rates = moving_center(spike_rates, 600, axis=-1)
+
         spike_rates = np.transpose(spike_rates, (0, 2, 1))
 
     return spike_rates
@@ -287,7 +304,7 @@ def load_shenoy(data_path, bin_width, boxcox, filter_fn, filter_kwargs,
     return dat
 
 def load_sabes(filename, bin_width=50, boxcox=0.5, filter_fn='none', filter_kwargs={}, spike_threshold=100,
-               std_behavior=False, region='M1', high_pass=True, **kwargs):
+               std_behavior=False, region='M1', high_pass=True, segment=False, **kwargs):
 
     # Convert bin width to s
     bin_width /= 1000
@@ -360,6 +377,22 @@ def load_sabes(filename, bin_width=50, boxcox=0.5, filter_fn='none', filter_kwar
 
         dat['time'] = np.squeeze(align_behavior(t[:, np.newaxis], T, bin_width))
 
+        # Pass through reach_segment_sabes and re-assign the behavior and spike_rates keys to the segmented versions 
+        if segment:
+            dat = reach_segment_sabes(dat, data_file=filename.split('/')[-1].split('.mat')[0])
+
+            # Ensure we have somewhat long trajectories
+            # T = 30
+            # t = np.array([t_[1] - t_[0] for t_ in dat['transition_times']])
+            # valid_transitions = np.arange(t.size)[t >= T]
+            valid_transitions = np.arange(len(dat['transition_times']))
+            spike_rates = np.array([dat['spike_rates'][0, dat['transition_times'][idx][0]:dat['transition_times'][idx][1]]
+                                    for idx in valid_transitions])
+            behavior = np.array([dat['behavior'][dat['transition_times'][idx][0]:dat['transition_times'][idx][1]]
+                                 for idx in valid_transitions])
+
+            dat['spike_rates'] = spike_rates
+            dat['behavior'] = behavior
         return dat
 
 def load_peanut_across_epochs(fpath, epochs, spike_threshold, **loader_kwargs):

@@ -11,25 +11,26 @@ if __name__ == '__main__':
 
     # Generate A matrices 
     dim = 100
-
+    nU = 50
+    nP = 50
 
     # 50 random U matrices. Then modulate the spread of the diagonals of P for each U
 
     U = []
-    for i in range(50):
-        U.append(unitary_group.rvs(100, random_state=seed))
+    for i in range(nU):
+        U.append(unitary_group.rvs(dim, random_state=seed))
 
     Puniform = []
-    for j in range(50):
-        Puniform.append(np.diag(np.linspace(0.775 - j/50 * 0.6, 0.8 + j/50 * 0.6, 100)))
+    for j in range(nP):
+        Puniform.append(np.diag(np.linspace(0.775 - j/nP * 0.6, 0.8 + j/nP * 0.6, dim)))
     # for i in range(50):
 
     Pclustered = []
     for j in range(50):
 
         # Smaller cluster
-        smaller_cluster = np.linspace(0.775 - j/50 * 0.6, 0.8 - j/50 * 0.5, dim//2)
-        larger_cluster = np.linspace(0.775 + j/50 * 0.5, 0.8 + j/50 * 0.6)
+        smaller_cluster = np.linspace(0.775 - j/nP * 0.6, 0.8 - j/nP * 0.5, dim//2)
+        larger_cluster = np.linspace(0.775 + j/nP * 0.5, 0.8 + j/nP * 0.6, dim//2)
         sigma = np.append(smaller_cluster, larger_cluster)
 
         # Larger cluster
@@ -37,7 +38,7 @@ if __name__ == '__main__':
 
     # Check to make sure all eigenvalues are < 1
     A = []
-    lambda_max = np.zeros((50, 50, 2))
+    lambda_max = np.zeros((nU, nP, 2))
     for i in range(len(U)):
         for j in range(len(Puniform)):
 

@@ -78,6 +78,61 @@ def calc_loadings(df):
 def calc_su_statistics():
     pass
 
+def get_scalar(df_, stat, neu_idx):
+
+    if stat == 'decoding_weights':
+        decoding_win = df_.iloc[0]['decoder_params']['decoding_window']
+        c = calc_loadings(df_.iloc[0]['decoding_weights'].T, d=decoding_win)[neu_idx]
+    elif stat == 'encoding_weights':
+        decoding_win = df_.iloc[0]['decoder_params']['decoding_window']
+        c =  calc_loadings(df_.iloc[0]['encoding_weights'], d=decoding_win)[neu_idx]        
+    elif stat in ['su_r2_pos', 'su_r2_vel', 'su_var', 'su_mmse', 'su_pi', 'su_fcca']:
+        c = df_.iloc[0][stat][neu_idx]
+    return c
+
+def get_su_scalars(loadings_df, su_df):
+    # Collect the desired single unit statistics into an array with the same ordering as those present in the loadings df
+    stats = ['decoding_weights', 'encoding_weights', 'su_r2_pos', 'su_r2_vel', 
+            'su_var', 'su_mmse', 'su_pi', 'su_fcca']
+
+    carray = np.zeros((loadings_df.shape[0], len(stats)))
+
+    for i in range(loadings_df.shape[0]):
+        for j, stat in enumerate(stats):
+            # Grab the unique identifiers needed
+            data_file = loadings_df.iloc[i]['data_file']
+            nidx = loadings_df.iloc[i]['nidx']
+            df_ = apply_df_filters(su_df, data_file=data_file)
+            carray[i, j] = get_scalar(df_, stat, nidx)
+
+
+    # Need to treat the encoding/decoding weights post projection as a special case
+    # dims hard-coded (9) 
+    carray2 = np.zeros((loadings_df.shape[0], 3, 4, 9))
+    for i in range(loadings_df.shape[0]):
+        data_file = loadings_df.iloc[i]['data_file']
+        nidx = loadings_df.iloc[i]['nidx']
+        df_ = apply_df_filters(su_df, data_file=data_file)
+
+        carray2[i, 0, ...] = df_.iloc[0]['proj_dw_pos'][..., nidx]
+        carray2[i, 1, ...] = df_.iloc[0]['proj_dw_vel'][..., nidx]
+        carray2[i, 2, ...] = df_.iloc[0]['proj_ew'][..., nidx]
+
+
+    return carray, carray2
+
+
+def barycenter_plot1():
+
+
+def barycentric_plot2():
+
+
+def proj_dw_scatter():
+
+
+def loaddings_correlation_summary():
+
 
 if __name__ == '__main__':
 

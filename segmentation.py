@@ -3,6 +3,36 @@ from copy import deepcopy
 import numpy as np
 import scipy 
 
+start_times = {'indy_20160426_01': 0,
+               'indy_20160622_01':1700,
+               'indy_20160624_03': 500,
+               'indy_20160627_01': 0,
+               'indy_20160630_01': 0,
+               'indy_20160915_01': 0,
+               'indy_20160921_01': 0,
+               'indy_20160930_02': 0,
+               'indy_20160930_05': 300,
+               'indy_20161005_06': 0,
+               'indy_20161006_02': 350,
+               'indy_20161007_02': 950,
+               'indy_20161011_03': 0,
+               'indy_20161013_03': 0,
+               'indy_20161014_04': 0,
+               'indy_20161017_02': 0,
+               'indy_20161024_03': 0,
+               'indy_20161025_04': 0,
+               'indy_20161026_03': 0,
+               'indy_20161027_03': 500,
+               'indy_20161206_02': 5500,
+               'indy_20161207_02': 0,
+               'indy_20161212_02': 0,
+               'indy_20161220_02': 0,
+               'indy_20170123_02': 0,
+               'indy_20170124_01': 0,
+               'indy_20170127_03': 0,
+               'indy_20170131_02': 0,
+               }
+
 def measure_straight_dev(trajectory, start, end):
     # Translate to the origin relative to the 1st target location
     trajectory -= start
@@ -53,7 +83,10 @@ def measure_straight_dev(trajectory, start, end):
     straight_dev /= straight_norm
     return straight_dev
 
-def reach_segment_sabes(dat, start_time):
+def reach_segment_sabes(dat, start_time=None, data_file=None):
+
+    if start_time is None:
+        start_time = start_times[data_file]
 
     target_locs = []
     time_on_target = []

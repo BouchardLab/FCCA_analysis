@@ -246,8 +246,8 @@ def cross_cov_calc(top_neurons_df):
 
             for j in range(n):
                 for k in range(n):
-                    cross_covs[h, i, j, k] = np.correlate(x[j], x[k], mode='same')
-                    cross_covs_01[h, i, j, k] = np.correlate(x[j]/np.max(x[j]), x[k]/np.max(x[k]), mode='same')
+                    cross_covs[h, i, j, k] = np.correlate(x[j], x[k], mode='same')/30
+                    cross_covs_01[h, i, j, k] = np.correlate(x[j]/np.max(x[j]), x[k]/np.max(x[k]), mode='same')/30
 
     return cross_covs, cross_covs_01
 
@@ -267,7 +267,7 @@ def cross_covs_statistics(cross_covs, cross_covs_01):
         for j in range(10):
             if i == j:
                 continue
-            cc_mag[:, :, idx, :] = cross_covs[:, :, i, j, :]
+            cc_mag[:, :, idx, :] = cross_covs01[:, :, i, j, :]
             cc_tau[:, :, idx, :] = cross_covs_01[:, :, i, j, :]
             idx += 1
 
@@ -279,6 +279,7 @@ def cross_covs_statistics(cross_covs, cross_covs_01):
         for i in range(2):
             # Sort by max cross-cov. Impart the correct units
             tau_max[h, i] = bin_width * (np.sort(np.argmax(cc_tau[h, i, :, :], axis=-1)) - T//2)
+    
     mag = np.max(cc_mag, axis=-1)
 
     # Paired difference tests pooling all samples together
@@ -299,33 +300,40 @@ def cross_covs_statistics(cross_covs, cross_covs_01):
     return tau_max, mag, (wstat1, wstat2, wstat3, wstat4), (p1, p2, p3, p4)
 
 def cross_cov_plots(method1, method2, tau_max, mag, stats, p, path):
+
+    tau_h1 = [knn_entropy(tau_max[idx, 0, :][:, np.newaxis], k=5) for idx in range(tau_max.shape[0])]
+    tau_h2 = [knn_entropy(tau_max[idx, 1, :][:, np.newaxis], k=5) for idx in range(tau_max.shape[0])]
+
     data_path = globals()['data_path']
-    T = globals()['T']
+    T = globals()['T']  
     n = globals()['n']
     bin_width = globals()['bin_width']
 
     # Plot the histograms
-    fig, ax = plt.subplots(4, 7, figsize=(28, 16))
+    fig, ax = plt.subplots(6, 5, figsize=(25, 30))
     for i in range(28):
-        a = ax[np.unravel_index(i, (4, 7))]
+        a = ax[np.unravel_index(i, (6, 5))]
         a.hist(tau_max[i, 0], alpha=0.5, bins=np.linspace(-1500, 1500, 25))
         a.hist(tau_max[i, 1], alpha=0.5)    
 
-    fig.suptitle('Peak cross-cov time, %s vs. %s, wcx stat%f, p=%f' % (method1, method2, stats[0], p[0]))
+        # Title with entropy
+        a.set_title('FCCA h: %.3f, PCA h:%.3f' % (tau_h1[i], tau_h2[i]))
+        a.legend(['FCCA', 'PCA'])
+
+    fig.suptitle('Peak cross-cov time, %s vs. %s' % (method1, method2))
     fig.savefig('%s/tau_hist.pdf' % path, bbox_inches='tight', pad_inches=0)
 
     # Plot the histograms
-    fig, ax = plt.subplots(4, 7, figsize=(28, 16))
+    fig, ax = plt.subplots(6, 5, figsize=(25, 30))
     for i in range(28):
-        a = ax[np.unravel_index(i, (4, 7))]
+        a = ax[np.unravel_index(i, (6, 5))]
         a.hist(mag[i, 0], alpha=0.5)
         a.hist(mag[i, 1], alpha=0.5)
+        a.set_title('FCCA h: %.3f, PCA h:%.3f' % (np.mean(mag[i, 0]), np.mean(mag[i, 1])))
+        a.legend(['FCCA', 'PCA'])
 
-    fig.suptitle('Peak cross-cov magnitude, %s vs. %s, wcx stat: %f, p=%f' % (method1, method2, stats[1], p[1]))
+    fig.suptitle('Peak cross-cov magnitude, %s vs. %s' % (method1, method2))
     fig.savefig('%s/mag_hist.pdf' % path, bbox_inches='tight', pad_inches=0)
-
-    tau_h1 = [knn_entropy(tau_max[idx, 0, :][:, np.newaxis], k=5) for idx in range(tau_max.shape[0])]
-    tau_h2 = [knn_entropy(tau_max[idx, 1, :][:, np.newaxis], k=5) for idx in range(tau_max.shape[0])]
 
     avg_mag1 = np.mean(mag[:, 0, :], axis=-1)
     avg_mag2 = np.mean(mag[:, 1, :], axis=-1)
@@ -338,8 +346,8 @@ def cross_cov_plots(method1, method2, tau_max, mag, stats, p, path):
     ax[0].set_xticklabels([method1, method2])
     ax[1].set_xticklabels([method1, method2])
 
-    ax[0].set_title(r'$\tau$' + '-entropy, wcx stat: %f, p=%f' % (stats[2], p[2]))
-    ax[1].set_title('Average magnitude, wcx stat: %f, p=%f' % (stats[3], p[3]))
+    ax[0].set_title(r'$\tau$' + '-entropy, stat: %f, p=%f' % (stats[2], p[2]), fontsize=10)
+    ax[1].set_title('Avg. magnitude, stat: %f, p=%f' % (stats[3], p[3]), fontsize=10)
 
     fig.savefig('%s/boxplots.pdf' % path, bbox_inches='tight', pad_inches=0)
     

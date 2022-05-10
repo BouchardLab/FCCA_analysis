@@ -32,7 +32,12 @@ from decoders import kf_decoder, lr_decoder
 import pdb
 import glob
 
-LOADER_DICT = {'sabes': load_sabes, 'shenoy': mpi_load_shenoy, 'peanut': load_peanut, 'cv':load_cv}
+def load_preprocessed(path, **kwargs):
+    with open(path, 'rb') as f:
+        dat = pickle.load(f)
+    return dat
+
+LOADER_DICT = {'sabes': load_sabes, 'shenoy': mpi_load_shenoy, 'peanut': load_peanut, 'cv':load_cv, 'preprocessed': load_preprocessed}
 DECODER_DICT = {'lr': lr_decoder, 'kf': kf_decoder}
 
 class PCA_wrapper():

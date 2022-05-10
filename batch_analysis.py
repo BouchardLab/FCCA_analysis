@@ -632,7 +632,7 @@ def main(cmd_args, args):
 
     if cmd_args.analysis_type == 'var':
 
-        ncomms=comm.size
+        # ncomms=comm.size
 
         # If resume, check whether the completed .dat file exists, and if so, skip
         if cmd_args.resume:

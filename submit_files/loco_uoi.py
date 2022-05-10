@@ -1,12 +1,12 @@
 import glob
 import os
 
-#script_path = '/global/homes/a/akumar25/repos/neural_control/batch_analysis.py'
-script_path = '/home/akumar/nse/neural_control/batch_analysis.py'
+script_path = '/global/homes/a/akumar25/repos/neural_control/batch_analysis.py'
+#script_path = '/home/akumar/nse/neural_control/batch_analysis.py'
 desc = 'UoI on Loco'
 
-#data_path = os.environ['SCRATCH'] + '/sabes'
-data_path = '/mnt/Secondary/data/sabes'    
+data_path = os.environ['SCRATCH'] + '/sabes'
+#data_path = '/mnt/Secondary/data/sabes'    
  
 # These are the data files that contain both M1 and S1 recordings.
 data_files = glob.glob('%s/loco*' % data_path)
@@ -21,13 +21,11 @@ loader = 'sabes'
 analysis_type = 'var'
  
  # Each of these can be made into a list whose outer product is taken
-loader_args = [{'bin_width':50, 'filter_fn':'none', 'filter_kwargs':{}, 'boxcox':0.5, 'spike_threshold':100, 'region':'M1'},
-               {'bin_width':50, 'filter_fn':'none', 'filter_kwargs':{}, 'boxcox':0.5, 'spike_threshold':100, 'region':'S1'},
-               {'bin_width':50, 'filter_fn':'none', 'filter_kwargs':{}, 'boxcox':0.5, 'spike_threshold':100, 'region':'both'}]
+loader_args = [{'bin_width':50, 'filter_fn':'none', 'filter_kwargs':{}, 'boxcox':0.5, 'spike_threshold':100, 'region':'S1'}]
 ft = ['uoi', 'union_only']
 penalty = ['l1', 'scad']
 # Estimation score not important since we save all estimates and do selection subsequently
 task_args = [{'estimator': 'uoi', 'self_regress':False, 'order':order, 'estimation_score':'null', 'fold_idx':idx, 'distributed_save':True,
               'fit_type': ft[i], 'penalty': penalty[i]} 
-              for order in [1, 2, 3, 4, 5]
+              for order in [1, 2, 3]
               for idx in range(5) for i in range(2)]

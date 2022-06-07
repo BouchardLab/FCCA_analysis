@@ -185,15 +185,24 @@ def postprocess_spikes(spike_times, T, bin_width, boxcox, filter_fn, filter_kwar
 
     return spike_rates
 
-def load_cv(file_path):
+def load_cv(file_path, zscore=False):
+
+    def zscore(data, axis=1, window=10):
+        base = data[:,list(range(window)) + list(range(data.shape[axis]-window, data.shape[axis])), :]
+        means = base.mean(axis=axis, keepdims=True)
+        stds = base.std(axis=axis, keepdims=True)
+        zdata = (data - means) / stds
+        return zdata
 
     f = h5py.File(file_path, 'r')
     X = np.squeeze(f['X'])
     y = np.array(f['y'])
+
     # Remove 'thee'
     theeless = np.where(y != b'thee')[0]
     X = X[theeless, ...]
     y = y[theeless]    
+
     dat = {}
     dat['spike_rates'] = X
     dat['behavior'] = y

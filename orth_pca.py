@@ -1,3 +1,5 @@
+import os, contextlib
+
 import numpy as np
 import scipy
 import torch
@@ -9,10 +11,11 @@ from pymanopt.optimizers import *
 
 class OrthPCA():
 
-    def __init__(self, d1, d2, seed=None):
+    def __init__(self, d1, d2, seed=None, verbose=False):
         self.d1 = d1
         self.d2 = d2
         self.seed = seed
+        self.verbose = verbose
         # self.sed = check_random_state(seed)
 
     def fit(self, X1, X2):
@@ -32,6 +35,10 @@ class OrthPCA():
         # Diagonalize these covariance matrices
         s1, U1 = scipy.linalg.eigh(Sigma1)
         s2, U2 = scipy.linalg.eigh(Sigma2)
+
+        # Ensure largest to smallest ordering
+        s1 = np.sort(s1)[::-1].copy()
+        s2 = np.sort(s2)[::-1].copy()
 
         s1 = torch.tensor(s1)
         s2 = torch.tensor(s2)
@@ -57,16 +64,29 @@ class OrthPCA():
             var1 = torch.trace(torch.chain_matmul(V1.t(), S1, V1))
             var2 = torch.trace(torch.chain_matmul(V2.t(), S2, V2))
 
-            return -1*(var1/torch.sum(s1) + var2/torch.sum(s2))
+            return -1*(var1/torch.sum(s1[0:self.d1]) + var2/torch.sum(s2[0:self.d2]))
             # Initialize optimization variables
             # V1 = scipy.stats.ortho_group.rvs(U1.shape[0])[:, 0:self.d1]
             # V2 = scipy.stats.ortho_group.rvs(U2.shape[0])[:, 0:self.d2]
 
         problem = pymanopt.Problem(manifold, loss_fn)
-        result = optimizer.run(problem)
+
+        if self.verbose:
+            result = optimizer.run(problem)
+    
+        else:
+            with open(os.devnull, 'w') as devnull:
+                with contextlib.redirect_stdout(devnull):
+                    result = optimizer.run(problem)
+
         V1 = result.point[:, 0:self.d1]
         V2 = result.point[:, self.d1:]
 
         score = result.cost
-        return V1, V2, score        
+
+        # Also document how much of the normalized variance we capture in each space
+        var_fraction1 = np.trace(V1.T @ Sigma1 @ V1)/np.trace(Sigma1)
+        var_fraction2 = np.trace(V2.T @ Sigma2 @ V2)/np.trace(Sigma2)
+
+        return V1, V2, score, var_fraction1, var_fraction2 
 

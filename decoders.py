@@ -261,29 +261,44 @@ def apply_window(X, Z, lag, window, transition_times, decoding_window, include_v
     # In this case, we have been given a list of windows for each transition.
     if len(window) > 2:
         for i, t in enumerate(transition_times):
-            
-            xx.append(X[t - lag + window[i][0]:t - lag + window[i][1]])
-            zz.append(Z[t + window[i][0]:t + window[i][1]])
+            # Enforce that the next reach must not have started within the window
+            if i < len(transition_times) - 1:
+                if t + window[i][1] < transition_times[i + 1]:
+                    xx.append(X[t - lag + window[i][0]:t - lag + window[i][1]])
+                    zz.append(Z[t + window[i][0]:t + window[i][1]])
+            else:
+                xx.append(X[t - lag + window[i][0]:t - lag + window[i][1]])
+                zz.append(Z[t + window[i][0]:t + window[i][1]])
     else:
-        for t in transition_times:
-            xx.append(X[t - lag + window[0]:t - lag + window[1]])
-            zz.append(Z[t + window[0]:t + window[1]])
+        for i, t in enumerate(transition_times):
+            # Enforce that the next reach must not have started within the window
+            if i < len(transition_times) - 1:
+                if t + window[1] < transition_times[i + 1]:
+                    xx.append(X[t - lag + window[0]:t - lag + window[1]])
+                    zz.append(Z[t + window[0]:t + window[1]])
+            else:
+                xx.append(X[t - lag + window[0]:t - lag + window[1]])
+                zz.append(Z[t + window[0]:t + window[1]])
 
-    # Apply decoding window
-    X = [form_lag_matrix(x, decoding_window) for x in xx]
+    if len(xx) > 0:
+        # Apply decoding window
+        X = [form_lag_matrix(x, decoding_window) for x in xx]
 
-    Z = [z[decoding_window//2:, :] for z in zz]
-    Z = [z[:x.shape[0], :] for z, x in zip(Z, X)]
+        Z = [z[decoding_window//2:, :] for z in zz]
+        Z = [z[:x.shape[0], :] for z, x in zip(Z, X)]
 
+        # Expand state space to include velocity and acceleration
+        if np.any([include_velocity, include_acc]):
+            Z, X = expand_state_space(Z, X, include_velocity, include_acc)
 
-    # Expand state space to include velocity and acceleration
-    if np.any([include_velocity, include_acc]):
-        Z, X = expand_state_space(Z, X, include_velocity, include_acc)
+        return X, Z
+    else:
+        return None, None
 
-    return X, Z
-
-def lr_decode_windowed(X, Z, lag, window, transition_times, train_idxs, test_idxs, 
+def lr_decode_windowed(X, Z, lag, window, transition_times, train_idxs, test_idxs=None, 
                        decoding_window=1, include_velocity=True, include_acc=True):
+
+    behavior_dim = Z.shape[-1]
 
     # We have been given a list of windows for each transition
     if len(window) > 2:
@@ -297,14 +312,19 @@ def lr_decode_windowed(X, Z, lag, window, transition_times, train_idxs, test_idx
 
     tt_train = [t[0] for t in transition_times 
         if t[0] >= min(train_idxs) and t[0] <= max(train_idxs) and t[0] > (lag + np.abs(win_min))]
-
-    tt_test = [t[0] for t in transition_times 
-                if t[0] >= min(test_idxs) and t[0] <= max(test_idxs) and t[0] > (lag + np.abs(win_min))]
-
-    behavior_dim = Z.shape[-1]
-
     Xtrain, Ztrain = apply_window(X, Z, lag, window, tt_train, decoding_window, include_velocity, include_acc)
-    Xtest, Ztest = apply_window(X, Z, lag, window, tt_test, decoding_window, include_velocity, include_acc)
+    if Xtrain is None:
+        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, None, 0
+    else:
+        n = len(Xtrain)
+
+    if test_idxs is not None:
+        tt_test = [t[0] for t in transition_times 
+                   if t[0] >= min(test_idxs) and t[0] <= max(test_idxs) and t[0] > (lag + np.abs(win_min))]
+        Xtest, Ztest = apply_window(X, Z, lag, window, tt_test, decoding_window, include_velocity, include_acc)
+    else:
+        Xtest = None
+        Ztest = None
 
     # Standardize
     #X = StandardScaler().fit_transform(X)
@@ -314,7 +334,6 @@ def lr_decode_windowed(X, Z, lag, window, transition_times, train_idxs, test_idx
     # Fit and score
     decodingregressor.fit(np.concatenate(Xtrain), np.concatenate(Ztrain))
     Zpred = decodingregressor.predict(np.concatenate(Xtrain))
-    Zpred_test = decodingregressor.predict(np.concatenate(Xtest))
 
     # Re-segment Zpred
     idx = 0
@@ -324,44 +343,44 @@ def lr_decode_windowed(X, Z, lag, window, transition_times, train_idxs, test_idx
         idx += z.shape[0]
 
     assert(np.all([z1.shape[0] == z2.shape[0] for (z1, z2) in zip(Zpred_segmented, Ztrain)]))
-
-    idx = 0
-    Zpred_test_segmented = []
-    for i, z in enumerate(Ztest):
-        Zpred_test_segmented.append(Zpred_test[idx:idx+z.shape[0]])
-        idx += z.shape[0]
-
-    assert(np.all([z1.shape[0] == z2.shape[0] for (z1, z2) in zip(Zpred_test_segmented, Ztest)]))
-
-    Ztest = np.concatenate(Ztest)
     Ztrain = np.concatenate(Ztrain)
+
+    if Xtest is not None:
+        Zpred_test = decodingregressor.predict(np.concatenate(Xtest))
+    
+        idx = 0
+        Zpred_test_segmented = []
+        for i, z in enumerate(Ztest):
+            Zpred_test_segmented.append(Zpred_test[idx:idx+z.shape[0]])
+            idx += z.shape[0]
+
+        assert(np.all([z1.shape[0] == z2.shape[0] for (z1, z2) in zip(Zpred_test_segmented, Ztest)]))
+
+        Ztest = np.concatenate(Ztest)
 
     if include_velocity and include_acc:
 
         # Additionally calculate the individual MSE
         mse_train = [np.linalg.norm(z1 - z2, axis=0)/z1.shape[0] for (z1, z2) in zip(Zpred_segmented, Ztrain)]
-        mse_test = [np.linalg.norm(z1 - z2, axis=0)/z1.shape[0] for (z1, z2) in zip(Zpred_test_segmented, Ztest)]
 
         lr_r2_pos = r2_score(Ztrain[..., 0:behavior_dim], Zpred[..., 0:behavior_dim])
         lr_r2_vel = r2_score(Ztrain[..., behavior_dim:2*behavior_dim], Zpred[..., behavior_dim:2*behavior_dim])
         lr_r2_acc = r2_score(Ztrain[..., 2*behavior_dim:], Zpred[..., 2*behavior_dim:])
 
-        lr_r2_post = r2_score(Ztest[..., 0:behavior_dim], Zpred_test[..., 0:behavior_dim])
-        lr_r2_velt = r2_score(Ztest[..., behavior_dim:2*behavior_dim], Zpred_test[..., behavior_dim:2*behavior_dim])
-        lr_r2_acct = r2_score(Ztest[..., 2*behavior_dim:], Zpred_test[..., 2*behavior_dim:])
+        if Xtest is not None:
+            mse_test = [np.linalg.norm(z1 - z2, axis=0)/z1.shape[0] for (z1, z2) in zip(Zpred_test_segmented, Ztest)]
+            lr_r2_post = r2_score(Ztest[..., 0:behavior_dim], Zpred_test[..., 0:behavior_dim])
+            lr_r2_velt = r2_score(Ztest[..., behavior_dim:2*behavior_dim], Zpred_test[..., behavior_dim:2*behavior_dim])
+            lr_r2_acct = r2_score(Ztest[..., 2*behavior_dim:], Zpred_test[..., 2*behavior_dim:])
+        else:
+            mse_test = np.nan
+            lr_r2_post = np.nan
+            lr_r2_velt = np.nan
+            lr_r2_acct = np.nan
 
-        return lr_r2_pos, lr_r2_vel, lr_r2_acc, lr_r2_post, lr_r2_velt, lr_r2_acct, mse_train, mse_test, decodingregressor
+        return lr_r2_pos, lr_r2_vel, lr_r2_acc, lr_r2_post, lr_r2_velt, lr_r2_acct, mse_train, mse_test, decodingregressor, n
+
     elif include_velocity:
-        lr_r2_pos = r2_score(Ztrain[..., 0:behavior_dim], Zpred[..., 0:behavior_dim])
-        lr_r2_vel = r2_score(Ztrain[..., behavior_dim:2*behavior_dim], Zpred[..., behavior_dim:2*behavior_dim])
-
-        lr_r2_post = r2_score(Ztest[..., 0:behavior_dim], Zpred_test[..., 0:behavior_dim])
-        lr_r2_velt = r2_score(Ztest[..., behavior_dim:2*behavior_dim], Zpred_test[..., behavior_dim:2*behavior_dim])
-
-        return lr_r2_pos, lr_r2_vel, lr_r2_post, lr_r2_velt, decodingregressor
+        raise NotImplementedError
     else:
-        lr_r2_pos = r2_score(Ztrain, Zpred)
-
-        lr_r2_post = r2_score(Ztest[..., 0:behavior_dim], Zpred_test[..., 0:behavior_dim])
-
-        return lr_r2_pos, lr_r2_post, decodingregressor
+        raise NotImplementedError

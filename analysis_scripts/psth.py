@@ -69,7 +69,7 @@ def get_top_neurons(dimreduc_df, method1='FCCA', method2='PCA', n=10, pairwise_e
             for dimreduc_method in ['DCA', 'KCA', 'LQGCA', 'PCA']:
                 loadings_fold = []
                 for fold_idx in range(5):            
-                    df_ = apply_df_filters(dimreduc_df, data_file=data_file, fold_idx=fold_idx, dim=2, dimreduc_method=dimreduc_method)
+                    df_ = apply_df_filters(dimreduc_df, data_file=data_file, fold_idx=fold_idx, dim=6, dimreduc_method=dimreduc_method)
                     if dimreduc_method == 'LQGCA':
                         df_ = apply_df_filters(df_, dimreduc_args={'T': 3, 'loss_type': 'trace', 'n_init': 5})
                     V = df_.iloc[0]['coef']
@@ -339,16 +339,31 @@ def cross_cov_plots(method1, method2, tau_max, mag, stats, p, path):
     avg_mag2 = np.mean(mag[:, 1, :], axis=-1)
 
     # Boxplots
-    fig, ax = plt.subplots(1, 2, figsize=(8, 4))
-    ax[0].boxplot([tau_h1, tau_h2])
-    ax[1].boxplot([avg_mag1, avg_mag2])
+    fig, ax = plt.subplots(1, 2, figsize=(4, 4))
+
+    medianprops = dict(linewidth=0)
+    bplot1 = ax[0].boxplot([tau_h1, tau_h2], patch_artist=True, medianprops=medianprops, notch=True, showfliers=False)
+    bplot2 = ax[1].boxplot([avg_mag1, avg_mag2], patch_artist=True, medianprops=medianprops, notch=True, showfliers=False)
 
     ax[0].set_xticklabels([method1, method2])
+    ax[0].set_yticks([0, -15, -30])
     ax[1].set_xticklabels([method1, method2])
+    # ax[1].set_yticks([15, 30, 45])
+    #ax[0].set_title(r'$\tau$' + '-entropy, stat: %f, p=%f' % (stats[2], p[2]), fontsize=10)
+    #ax[1].set_title('Avg. magnitude, stat: %f, p=%f' % (stats[3], p[3]), fontsize=10)
 
-    ax[0].set_title(r'$\tau$' + '-entropy, stat: %f, p=%f' % (stats[2], p[2]), fontsize=10)
-    ax[1].set_title('Avg. magnitude, stat: %f, p=%f' % (stats[3], p[3]), fontsize=10)
+    ax[0].set_ylabel('Entropy of peak cross-corr. times', fontsize=12)
+    ax[1].set_ylabel('Average peak cross-corr.', fontsize=12)
 
+
+    # fill with colors
+    colors = ['red', 'black']
+    for bplot in (bplot1, bplot2):
+        for patch, color in zip(bplot['boxes'], colors):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.75)
+
+    fig.tight_layout()
     fig.savefig('%s/boxplots.pdf' % path, bbox_inches='tight', pad_inches=0)
     
 

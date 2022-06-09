@@ -150,8 +150,11 @@ if __name__ == '__main__':
     dimvals = np.array([2, 6, 10, 15])
 
     if comm.rank == 0:
-        with open('/home/akumar/nse/neural_control/data/sabes_dimreduc_nocv.dat', 'rb') as f:
+        # with open('/home/akumar/nse/neural_control/data/sabes_dimreduc_nocv.dat', 'rb') as f:
+        #     sabes_df = pickle.load(f)
+        with open('/mnt/sdb1/nc_data/sabes_dimreduc_nocv.dat', 'rb') as f:
             sabes_df = pickle.load(f)
+
 
         sabes_df = pd.DataFrame(sabes_df)
 
@@ -168,7 +171,8 @@ if __name__ == '__main__':
             coefpca.append(df.iloc[0]['pcacoef'])
             coeffcca.append(df.iloc[0]['lqgcoef'])
 
-        dat = load_sabes('/mnt/Secondary/data/sabes/%s' % data_file)
+#        dat = load_sabes('/mnt/Secondary/data/sabes/%s' % data_file)
+        dat = load_sabes('/mnt/sdb1/nc_data/sabes/%s' % data_file)
         dat = reach_segment_sabes(dat, start_times[data_file.split('.mat')[0]])
         X = np.squeeze(dat['spike_rates'])
         Z = dat['behavior']
@@ -219,9 +223,8 @@ if __name__ == '__main__':
     dimval = dimvals[comm.rank]
 
     wr2 = np.zeros((len(windows), 2, 6))
-    mse = np.zeros((len(windows), 2, 2), dtype=object)
     # Keep track of how many and which reaches were valid for the window
-    ns = np.zeros(len(windows))
+    idxs = np.zeros(len(windows), dtype=object)
 
     coef_pca = coefpca[comm.rank]
     coef_fcca = coeffcca[comm.rank]
@@ -231,25 +234,22 @@ if __name__ == '__main__':
 
     # Apply projection
     for j, window in enumerate(windows):
-        r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete, _, n = lr_decode_windowed(xpca, Z, lag, window, transition_times, np.arange(Z.shape[0]),
+        r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete, vidxs, _ = lr_decode_windowed(xpca, Z, lag, window, transition_times, np.arange(Z.shape[0]),
                                                                                             test_idxs=None, decoding_window=decoding_window) 
         wr2[j, 0, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
-        mse[j, 0, :] = (msetr, msete)
-        ns[j] = n
+        idxs[j] = vidxs
 
-        r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete, _, n = lr_decode_windowed(xfcca, Z, lag, window, transition_times, np.arange(Z.shape[0]),
+        r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete, vidxs, _ = lr_decode_windowed(xfcca, Z, lag, window, transition_times, np.arange(Z.shape[0]),
                                                                                           test_idxs=None, decoding_window=decoding_window)
         wr2[j, 1, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
-        mse[j, 1, :] = (msetr, msete)
                 
 
     windows = np.array(windows)
-    dpath = '/home/akumar/nse/neural_control/data/decodingvtfull/cleanedup'
-
+    #dpath = '/home/akumar/nse/neural_control/data/decodingvtfull/cleanedup'
+    dpath = '/mnt/sdb1/nc_data/decodingvt'
     with open('%s/didx%d_dim%d_%s.dat' % (dpath, didx, comm.rank, filter_string), 'wb') as f:
         f.write(pickle.dumps(wr2))
-        f.write(pickle.dumps(mse))
-        f.write(pickle.dumps(ns))
+        f.write(pickle.dumps(idxs))
         f.write(pickle.dumps(error_filter))
         f.write(pickle.dumps(reach_filter))
         f.write(pickle.dumps(windows))

@@ -258,6 +258,8 @@ def apply_window(X, Z, lag, window, transition_times, decoding_window, include_v
     xx = []
     zz = []
 
+    valid_idxs = []
+
     # In this case, we have been given a list of windows for each transition.
     if len(window) > 2:
         for i, t in enumerate(transition_times):
@@ -266,9 +268,13 @@ def apply_window(X, Z, lag, window, transition_times, decoding_window, include_v
                 if t + window[i][1] < transition_times[i + 1]:
                     xx.append(X[t - lag + window[i][0]:t - lag + window[i][1]])
                     zz.append(Z[t + window[i][0]:t + window[i][1]])
+                    valid_idxs.append(i)
             else:
-                xx.append(X[t - lag + window[i][0]:t - lag + window[i][1]])
-                zz.append(Z[t + window[i][0]:t + window[i][1]])
+                # Need to ensure that the window does not bleed into the end of the session
+                if t + window[i][1] < Z.shape[0] - lag:
+                    xx.append(X[t - lag + window[i][0]:t - lag + window[i][1]])
+                    zz.append(Z[t + window[i][0]:t + window[i][1]])
+                    valid_idxs.append(i)
     else:
         for i, t in enumerate(transition_times):
             # Enforce that the next reach must not have started within the window
@@ -276,9 +282,13 @@ def apply_window(X, Z, lag, window, transition_times, decoding_window, include_v
                 if t + window[1] < transition_times[i + 1]:
                     xx.append(X[t - lag + window[0]:t - lag + window[1]])
                     zz.append(Z[t + window[0]:t + window[1]])
+                    valid_idxs.append(i)
             else:
-                xx.append(X[t - lag + window[0]:t - lag + window[1]])
-                zz.append(Z[t + window[0]:t + window[1]])
+                # Need to ensure that the window does not bleed into the end of the session
+                if t + window[1] < Z.shape[0] - lag:
+                    xx.append(X[t - lag + window[0]:t - lag + window[1]])
+                    zz.append(Z[t + window[0]:t + window[1]])
+                    valid_idxs.append(i)
 
     if len(xx) > 0:
         # Apply decoding window
@@ -291,9 +301,9 @@ def apply_window(X, Z, lag, window, transition_times, decoding_window, include_v
         if np.any([include_velocity, include_acc]):
             Z, X = expand_state_space(Z, X, include_velocity, include_acc)
 
-        return X, Z
+        return X, Z, valid_idxs
     else:
-        return None, None
+        return None, None, valid_idxs
 
 def lr_decode_windowed(X, Z, lag, window, transition_times, train_idxs, test_idxs=None, 
                        decoding_window=1, include_velocity=True, include_acc=True):
@@ -312,19 +322,21 @@ def lr_decode_windowed(X, Z, lag, window, transition_times, train_idxs, test_idx
 
     tt_train = [t[0] for t in transition_times 
         if t[0] >= min(train_idxs) and t[0] <= max(train_idxs) and t[0] > (lag + np.abs(win_min))]
-    Xtrain, Ztrain = apply_window(X, Z, lag, window, tt_train, decoding_window, include_velocity, include_acc)
+    Xtrain, Ztrain, vidxs = apply_window(X, Z, lag, window, tt_train, decoding_window, include_velocity, include_acc)
+
     if Xtrain is None:
-        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, None, 0
+        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, [], []
     else:
         n = len(Xtrain)
 
     if test_idxs is not None:
         tt_test = [t[0] for t in transition_times 
                    if t[0] >= min(test_idxs) and t[0] <= max(test_idxs) and t[0] > (lag + np.abs(win_min))]
-        Xtest, Ztest = apply_window(X, Z, lag, window, tt_test, decoding_window, include_velocity, include_acc)
+        Xtest, Ztest, vidxst = apply_window(X, Z, lag, window, tt_test, decoding_window, include_velocity, include_acc)
     else:
         Xtest = None
         Ztest = None
+        vidxst = []
 
     # Standardize
     #X = StandardScaler().fit_transform(X)
@@ -378,7 +390,7 @@ def lr_decode_windowed(X, Z, lag, window, transition_times, train_idxs, test_idx
             lr_r2_velt = np.nan
             lr_r2_acct = np.nan
 
-        return lr_r2_pos, lr_r2_vel, lr_r2_acc, lr_r2_post, lr_r2_velt, lr_r2_acct, mse_train, mse_test, decodingregressor, n
+        return lr_r2_pos, lr_r2_vel, lr_r2_acc, lr_r2_post, lr_r2_velt, lr_r2_acct, mse_train, mse_test, vidxs, vidxst
 
     elif include_velocity:
         raise NotImplementedError

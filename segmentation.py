@@ -151,8 +151,9 @@ def reach_segment_sabes(dat, start_time=None, data_file=None):
         cursor_1 = dat['behavior'][valid_transition_times[target_pairs[i][1]] - time_win:\
                                    valid_transition_times[target_pairs[i][1]]]
 
-        # Edited 6/7/2022 - Only consider the end error
-        target_error_pairs[i] = np.mean(np.linalg.norm(cursor_1 - target_locs[target_pairs[i][1]]))
+        # Edited 6/8/2022 - Take the average of start and end errors 
+        target_error_pairs[i] = np.mean([np.mean(np.linalg.norm(cursor_0 - target_locs[target_pairs[i][0]])),
+                                         np.mean(np.linalg.norm(cursor_1 - target_locs[target_pairs[i][1]]))])
 
     # Thresholding by error threshold (how far from the start and end targets is the reach)
     err_thresh = np.quantile(target_error_pairs, 0.9)

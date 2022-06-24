@@ -67,7 +67,7 @@ def gen_run(name, didxs, error_filt_params, reach_filt_params):
 # 3: Reach length (discrete category)
 # 4: Number of peaks in velocity (n, equal, ge, le)
 # Can add error threshold on top
-def filter_reach_type(dat, reach_filter, error_percentile=0., error_op='ge', q=1., op='ge'):
+def filter_reach_type(dat, reach_filter, error_percentile=0., error_op='ge', q=1., op='ge', windows=None):
 
     error_thresh = np.quantile(dat['target_pair_error'], error_percentile)
     transition_times = np.array(dat['transition_times'], dtype=object)
@@ -130,8 +130,37 @@ def filter_reach_type(dat, reach_filter, error_percentile=0., error_op='ge', q=1
             reach_filter = np.squeeze(np.argwhere(np.array(npeaks) > q))
 
     transition_times = transition_times[reach_filter]
+
+    # Finally, filter such that for each recording session, the same reaches are assessed across all
+    # windows. This requires taking the intersection of reaches that satisfy the window condition here.
+    def valid_reach(t0, t1, w, measure_from_end):
+        if measure_from_end:
+            window_in_reach = t1 - w[1] > t0
+        else:
+            window_in_reach = t0 + w[1] < t1
+        return window_in_reach
+
+    if windows is not None:
+        window_filter = []
+        for i, window in enumerate(windows):
+            window_filter.append([])
+            for j, (t0, t1) in enumerate(transition_times):
+                # Enforce that the previous reach must not have began after the window begins
+                if valid_reach(t0,  t1, window, measure_from_end):
+                    window_filter[i].append(j)
+        
+        # Take the intersection
+        window_filter_int = set(window_filter[0])
+        for wf in window_filter:
+            window_filter_int = window_filter_int.intersection(set(wf))
+
+        window_filter = list(window_filter_int)
+        transition_times = transition_times[window_filter]
+    else:
+        window_filter = None
+
     print('%d Reaches' % len(transition_times))
-    return transition_times, error_filter, reach_filter
+    return transition_times, error_filter, reach_filter, window_filter
 
 if __name__ == '__main__':
 
@@ -148,13 +177,18 @@ if __name__ == '__main__':
     comm = MPI.COMM_WORLD
 
     dimvals = np.array([2, 6, 10, 15])
+    measure_from_end=False
+
+    # Sliding windows
+    window_width = 10
+    window_centers = np.linspace(0, 35, 15)[0:9]
+    windows = [(int(wc - window_width//2), int(wc + window_width//2)) for wc in window_centers]
 
     if comm.rank == 0:
-        # with open('/home/akumar/nse/neural_control/data/sabes_dimreduc_nocv.dat', 'rb') as f:
+        # with open('/home/akumar/nse/neural_control/data/indy_dimreduc_nocv.dat', 'rb') as f:
         #     sabes_df = pickle.load(f)
-        with open('/mnt/sdb1/nc_data/sabes_dimreduc_nocv.dat', 'rb') as f:
+        with open('/home/akumar/nse/neural_control/data/sabes_dimreduc_nocv.dat', 'rb') as f:
             sabes_df = pickle.load(f)
-
 
         sabes_df = pd.DataFrame(sabes_df)
 
@@ -169,18 +203,29 @@ if __name__ == '__main__':
             assert(df.shape[0] == 1)
             
             coefpca.append(df.iloc[0]['pcacoef'])
-            coeffcca.append(df.iloc[0]['lqgcoef'])
+            coeffcca.append(df.iloc[0]['lqgcoef'])            
 
-#        dat = load_sabes('/mnt/Secondary/data/sabes/%s' % data_file)
-        dat = load_sabes('/mnt/sdb1/nc_data/sabes/%s' % data_file)
+            # dffca = apply_df_filters(sabes_df, data_file=data_file, dim=dimval, dimreduc_method='LQGCA')
+            # dfpca = apply_df_filters(sabes_df, data_file=data_file, dim=dimval, dimreduc_method='PCA')
+
+            # assert(dffca.shape[0] == 1)
+            # assert(dfpca.shape[0] == 1)
+            
+            # coefpca.append(dfpca.iloc[0]['coef'])
+            # coeffcca.append(dffca.iloc[0]['coef'][:, 0:dimval])
+
+        dat = load_sabes('/mnt/Secondary/data/sabes/%s' % data_file)
+        # dat = load_sabes(data_file)
+        data_file = data_file.split('/')[-1]
+        # dat = load_sabes('/mnt/sdb1/nc_data/sabes/%s' % data_file)
         dat = reach_segment_sabes(dat, start_times[data_file.split('.mat')[0]])
         X = np.squeeze(dat['spike_rates'])
         Z = dat['behavior']
         # transition_times = dat['transition_times']
 
-        transition_times, error_filter, reach_filter = filter_reach_type(dat, args.reach_filter, 
-                                                                         args.error_thresh, args.error_op, 
-                                                                         q=args.q, op=args.filter_op)
+        transition_times, error_filter, reach_filter, window_filter = filter_reach_type(dat, args.reach_filter, 
+                                                                                        args.error_thresh, args.error_op, 
+                                                                                        q=args.q, op=args.filter_op, windows=windows)
         # Encode the error_thresh, error_op, reach filter, q and op into a string
         filter_params = {'error_thresh':args.error_thresh, 'error_op':args.error_op,
                          'reach_filter':args.reach_filter, 'q':args.q, 'op':args.filter_op}
@@ -197,6 +242,7 @@ if __name__ == '__main__':
         transition_times = None
         error_filter = None
         reach_filter = None
+        window_filter = None
         filter_params = None
         filter_string = None
 
@@ -207,25 +253,17 @@ if __name__ == '__main__':
     transition_times = comm.bcast(transition_times)
     error_filter = comm.bcast(error_filter)
     reach_filter = comm.bcast(reach_filter)
+    window_filter = comm.bcast(window_filter)
     filter_params = comm.bcast(filter_params)
     filter_string = comm.bcast(filter_string)
 
     lag = 4
     decoding_window = 5
 
-    # Sliding windows
-    window_width = 10
-    window_centers = np.linspace(0, 35, 15)
-
-    windows = [(int(wc - window_width//2), int(wc + window_width//2)) for wc in window_centers]
-
     # Distribute dimvals across ranks
     dimval = dimvals[comm.rank]
 
     wr2 = np.zeros((len(windows), 2, 6))
-    # Keep track of how many and which reaches were valid for the window
-    idxs = np.zeros(len(windows), dtype=object)
-
     coef_pca = coefpca[comm.rank]
     coef_fcca = coeffcca[comm.rank]
 
@@ -234,24 +272,23 @@ if __name__ == '__main__':
 
     # Apply projection
     for j, window in enumerate(windows):
-        r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete, vidxs, _ = lr_decode_windowed(xpca, Z, lag, window, transition_times, np.arange(Z.shape[0]),
-                                                                                            test_idxs=None, decoding_window=decoding_window) 
+        r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete,  _ = lr_decode_windowed(xpca, Z, lag, window, transition_times, np.arange(Z.shape[0]),
+                                                                                            test_idxs=None, decoding_window=decoding_window, measure_from_end=measure_from_end) 
         wr2[j, 0, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
-        idxs[j] = vidxs
 
-        r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete, vidxs, _ = lr_decode_windowed(xfcca, Z, lag, window, transition_times, np.arange(Z.shape[0]),
-                                                                                          test_idxs=None, decoding_window=decoding_window)
+        r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete,  _ = lr_decode_windowed(xfcca, Z, lag, window, transition_times, np.arange(Z.shape[0]),
+                                                                                          test_idxs=None, decoding_window=decoding_window, measure_from_end=measure_from_end)
         wr2[j, 1, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
                 
 
     windows = np.array(windows)
-    #dpath = '/home/akumar/nse/neural_control/data/decodingvtfull/cleanedup'
-    dpath = '/mnt/sdb1/nc_data/decodingvt'
-    with open('%s/didx%d_dim%d_%s.dat' % (dpath, didx, comm.rank, filter_string), 'wb') as f:
+    dpath = '/home/akumar/nse/neural_control/data/decodingvt2'
+    #dpath = '/mnt/sdb1/nc_data/decodingvt'
+    with open('%s/didx%d_dim%d_%s_%d.dat' % (dpath, didx, comm.rank, filter_string, measure_from_end), 'wb') as f:
         f.write(pickle.dumps(wr2))
-        f.write(pickle.dumps(idxs))
         f.write(pickle.dumps(error_filter))
         f.write(pickle.dumps(reach_filter))
+        f.write(pickle.dumps(window_filter))
         f.write(pickle.dumps(windows))
         f.write(pickle.dumps(filter_params))
         

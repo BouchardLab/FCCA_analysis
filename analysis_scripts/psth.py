@@ -349,8 +349,11 @@ def cross_cov_plots(method1, method2, tau_max, mag, stats, p, path):
     ax[0].set_yticks([0, -15, -30])
     ax[1].set_xticklabels([method1, method2])
     # ax[1].set_yticks([15, 30, 45])
-    #ax[0].set_title(r'$\tau$' + '-entropy, stat: %f, p=%f' % (stats[2], p[2]), fontsize=10)
-    #ax[1].set_title('Avg. magnitude, stat: %f, p=%f' % (stats[3], p[3]), fontsize=10)
+    #ax[0].set_title(r'$\tau$' + '-entropy, p=%f' % p[2], fontsize=10)
+    #ax[1].set_title('Avg. magnitude, stat: p=%f' % p[3], fontsize=10)
+    ax[0].set_title('p=%f' % p[2], fontsize=10)
+    ax[1].set_title('p=%f' % p[3], fontsize=10)
+
 
     ax[0].set_ylabel('Entropy of peak cross-corr. times', fontsize=12)
     ax[1].set_ylabel('Average peak cross-corr.', fontsize=12)
@@ -382,7 +385,7 @@ if __name__ == '__main__':
     globals()['bin_width'] = bin_width
 
     # Load dimreduc_df
-    with open('/home/akumar/nse/neural_control/data/sabes_decoding_df.dat', 'rb') as f:
+    with open('/home/akumar/nse/neural_control/data/indy_decoding_df.dat', 'rb') as f:
         dimreduc_df = pd.DataFrame(pickle.load(f))
 
     method1 = 'FCCA'

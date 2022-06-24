@@ -13,7 +13,7 @@ from sklearn.model_selection import KFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 
-from pyuoi.linear_model.var import VAR
+#from pyuoi.linear_model.var import VAR
 from dca.dca import DynamicalComponentsAnalysis as DCA
 from dca.cov_util import form_lag_matrix
 from dca_research.kca import KalmanComponentsAnalysis as KCA
@@ -56,7 +56,7 @@ class PCA_wrapper():
         self.coef_ = self.pcaobj.components_.T[:, 0:self.dim]
 
     def score(self):
-        return sum(self.pcaobj.explained_variance_[0:self.dim])
+        return sum(self.pcaobj.explained_variance_ratio_[0:self.dim])
 
 DIMREDUC_DICT = {'PCA': PCA_wrapper, 'DCA': DCA, 'KCA': KCA, 'LQGCA': LQGCA}
 
@@ -115,6 +115,8 @@ def comm_split(comm, ncomms):
     if comm is not None:    
         subcomm = None
         split_ranks = None
+    else:
+        split_ranks = None
 
     return split_ranks
 
@@ -144,6 +146,8 @@ def consolidate(results_folder, results_file, comm):
             with open(data_file, 'rb') as f:
                 results_dict = pickle.load(f)
                 results_dict_list.append(results_dict)
+        
+        with open(results_file, 'wb') as f:    
             f.write(pickle.dumps(results_dict_list))
 
 def load_data(loader, data_file, loader_args, comm, broadcast_behavior=False):
@@ -266,9 +270,16 @@ class PoolWorker():
         # X is either of shape (n_time, n_dof) or (n_trials,). In the latter case
         X = globals()['X']
 
-
         # dim_val is too high
-        if X[0].shape[1] <= dim:
+        dim_error = False
+        if np.ndim(X) == 2:
+            if X.shape[1] <= dim:
+                dim_error = True
+        else:
+            if X[0].shape[1] <= dim:
+                dim_error = True
+
+        if dim_error:
             results_dict = {}
             results_dict['dim'] = dim
             results_dict['fold_idx'] = fold_idx
@@ -293,6 +304,7 @@ class PoolWorker():
                 # X_train_ctd = np.array([Xi - X_mean for Xi in X_train])
 
             # Fit OLS VAR, DCA, PCA, and SFA
+
             dimreducmodel = DIMREDUC_DICT[method](d=dim, **method_args)
             dimreducmodel.fit(X_train)
 
@@ -490,9 +502,13 @@ def dimreduc_(dim_vals,
         X = globals()['X']
 
         # Do cv_splits here
-        cv = KFold(n_folds, shuffle=False)
+        if n_folds > 1:
+            cv = KFold(n_folds, shuffle=False)
+            train_test_idxs = list(cv.split(X))
+        else:
+            # No cross-validation split
+            train_test_idxs = [(list(range(X.shape[0])), [])]
 
-        train_test_idxs = list(cv.split(X))
         data_tasks = [(idx,) + train_test_split for idx, train_test_split
                     in enumerate(train_test_idxs)]    
         tasks = itertools.product(data_tasks, dim_vals)
@@ -507,8 +523,13 @@ def dimreduc_(dim_vals,
             X = globals()['X']
 
             # Do cv_splits here
-            cv = KFold(n_folds, shuffle=False)
-            train_test_idxs = list(cv.split(X))
+            if n_folds > 1:
+                cv = KFold(n_folds, shuffle=False)
+                train_test_idxs = list(cv.split(X))
+            else:
+                # No cross-validation split
+                train_test_idxs = [(list(range(X.shape[0])), [])]
+
             data_tasks = [(idx,) + train_test_split for idx, train_test_split
                         in enumerate(train_test_idxs)]    
             tasks = itertools.product(data_tasks, dim_vals)

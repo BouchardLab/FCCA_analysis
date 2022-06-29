@@ -56,7 +56,7 @@ start_times = {'indy_20160426_01': 0,
 if __name__ == '__main__':
 
 
-    with open('/home/akumar/nse/neural_control/data/indy_decoding_df.dat', 'rb') as f:
+    with open('/home/akumar/nse/neural_control/data/indy_decoding_df2.dat', 'rb') as f:
         sabes_df = pickle.load(f)
     sabes_df = pd.DataFrame(sabes_df)
 
@@ -74,7 +74,7 @@ if __name__ == '__main__':
             for dimreduc_method in ['DCA', 'KCA', 'LQGCA', 'PCA']:
                 df_ = apply_df_filters(sabes_df, data_file=data_file, fold_idx=0, dim=6, dimreduc_method=dimreduc_method)
                 if dimreduc_method == 'LQGCA':
-                    df_ = apply_df_filters(df_, dimreduc_args={'T': 3, 'loss_type': 'trace', 'n_init': 5})
+                    df_ = apply_df_filters(df_, dimreduc_args={'T': 3, 'loss_type': 'trace', 'n_init': 10})
                 V = df_.iloc[0]['coef']
                 if dimreduc_method == 'PCA':
                     V = V[:, 0:6]        
@@ -132,7 +132,7 @@ if __name__ == '__main__':
 
     df1 = apply_df_filters(sabes_df, data_file=data_file, fold_idx=0, dim=6, dimreduc_method='PCA')
     df2 = apply_df_filters(sabes_df, data_file=data_file, fold_idx=0, dim=6, dimreduc_method='LQGCA', 
-                           dimreduc_args={'T':3, 'loss_type':'trace', 'n_init':5})
+                           dimreduc_args={'T':3, 'loss_type':'trace', 'n_init':10})
 
 
     datpath = '/mnt/Secondary/data/sabes'

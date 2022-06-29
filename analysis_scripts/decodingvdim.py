@@ -24,80 +24,80 @@ from decoders import lr_decoder
 if __name__ == '__main__':
 
     # # Sequentially do indy, peanut decoding
-    # with open('/home/akumar/nse/neural_control/data/indy_decoding_df.dat', 'rb') as f:
-    #     rl = pickle.load(f)
-    # sabes_df = pd.DataFrame(rl)
-    # sabes_df = apply_df_filters(sabes_df, dimreduc_method='LQGCA')
+    with open('/home/akumar/nse/neural_control/data/indy_decoding_df2.dat', 'rb') as f:
+        rl = pickle.load(f)
+    sabes_df = pd.DataFrame(rl)
+    sabes_df = apply_df_filters(sabes_df, dimreduc_method='LQGCA')
 
-    # # Grab PCA results
-    # with open('/home/akumar/nse/neural_control/data/sabes_kca_decodign_df.dat', 'rb') as f:
-    #     pca_decoding_df = pickle.load(f)
+    # Grab PCA results
+    with open('/home/akumar/nse/neural_control/data/sabes_kca_decodign_df.dat', 'rb') as f:
+        pca_decoding_df = pickle.load(f)
 
-    # data_files = np.unique(sabes_df['data_file'].values)
-    # dims = np.unique(sabes_df['dim'].values)
-    # r2fc = np.zeros((len(data_files), dims.size, 5, 3))
+    data_files = np.unique(sabes_df['data_file'].values)
+    dims = np.unique(sabes_df['dim'].values)
+    r2fc = np.zeros((len(data_files), dims.size, 5, 3))
 
-    # for i, data_file in tqdm(enumerate(data_files)):
-    #     for j, dim in enumerate(dims):               
-    #         for f in range(5):
-    #             dim_fold_df = apply_df_filters(sabes_df, data_file=data_file, dim=dim, fold_idx=f)
-    #             # Trace loss
-    #             try:
-    #                 assert(dim_fold_df.shape[0] == 1)
-    #             except:
-    #                 pdb.set_trace()
-    #             r2fc[i, j, f, :] = dim_fold_df.iloc[0]['r2']
+    for i, data_file in tqdm(enumerate(data_files)):
+        for j, dim in enumerate(dims):               
+            for f in range(5):
+                dim_fold_df = apply_df_filters(sabes_df, data_file=data_file, dim=dim, fold_idx=f)
+                # Trace loss
+                try:
+                    assert(dim_fold_df.shape[0] == 1)
+                except:
+                    pdb.set_trace()
+                r2fc[i, j, f, :] = dim_fold_df.iloc[0]['r2']
 
-    # dims = np.unique(sabes_df['dim'].values)
-    # sr2_vel_pca = np.zeros((28, 30, 5))
-    # for i, data_file in enumerate(data_files):
-    #     for j, dim in enumerate(dims):
-    #         data_file = data_file.split('/')[-1]
-    #         pca_df = apply_df_filters(pca_decoding_df, dim=dim, data_file=data_file, dr_method='PCA')        
-    #         for k in range(pca_df.shape[0]):
-    #             sr2_vel_pca[i, j, k] = pca_df.iloc[k]['r2'][1]
+    dims = np.unique(sabes_df['dim'].values)
+    sr2_vel_pca = np.zeros((28, 30, 5))
+    for i, data_file in enumerate(data_files):
+        for j, dim in enumerate(dims):
+            data_file = data_file.split('/')[-1]
+            pca_df = apply_df_filters(pca_decoding_df, dim=dim, data_file=data_file, dr_method='PCA')        
+            for k in range(pca_df.shape[0]):
+                sr2_vel_pca[i, j, k] = pca_df.iloc[k]['r2'][1]
 
-    # fig, ax = plt.subplots(1, 1, figsize=(4, 4))
+    fig, ax = plt.subplots(1, 1, figsize=(4, 4))
 
-    # # Average across folds and plot
-    # # REINSERT OLS(5) IN HERE IF NEEDED
+    # Average across folds and plot
+    # REINSERT OLS(5) IN HERE IF NEEDED
 
-    # colors = ['black', 'red', '#781820', '#5563fa']
-    # dim_vals =dims
+    colors = ['black', 'red', '#781820', '#5563fa']
+    dim_vals =dims
 
-    # # # DCA averaged over folds
-    # # dca_r2 = np.mean(r2[:, :, 1, :, 1], axis=2)
-    # # # KCA averaged over folds
-    # # kca_r2 = np.mean(r2[:, :, 2, :, 1], axis=2)
+    # # DCA averaged over folds
+    # dca_r2 = np.mean(r2[:, :, 1, :, 1], axis=2)
+    # # KCA averaged over folds
+    # kca_r2 = np.mean(r2[:, :, 2, :, 1], axis=2)
 
-    # # FCCA averaged over folds
-    # fca_r2 = np.mean(r2fc[:, :, :, 1], axis=2)
-    # # PCA
-    # pca_r2 = np.mean(sr2_vel_pca, axis=-1)
+    # FCCA averaged over folds
+    fca_r2 = np.mean(r2fc[:, :, :, 1], axis=2)
+    # PCA
+    pca_r2 = np.mean(sr2_vel_pca, axis=-1)
 
-    # # ax.fill_between(dim_vals, np.mean(dca_r2, axis=0) + np.std(dca_r2, axis=0)/np.sqrt(28),
-    # #                 np.mean(dca_r2, axis=0) - np.std(dca_r2, axis=0)/np.sqrt(28), color=colors[0], alpha=0.25)
-    # # ax.plot(dim_vals, np.mean(dca_r2, axis=0), color=colors[0])
-    # # ax.fill_between(dim_vals, np.mean(kca_r2, axis=0) + np.std(kca_r2, axis=0)/np.sqrt(28),
-    # #                 np.mean(kca_r2, axis=0) - np.std(kca_r2, axis=0)/np.sqrt(28), color=colors[1], alpha=0.25)
-    # # ax.plot(dim_vals, np.mean(kca_r2, axis=0), color=colors[1])
-    # ax.fill_between(dim_vals, np.mean(fca_r2, axis=0) + np.std(fca_r2, axis=0)/np.sqrt(28),
-    #                 np.mean(fca_r2, axis=0) - np.std(fca_r2, axis=0)/np.sqrt(28), color=colors[1], alpha=0.25)
-    # ax.plot(dim_vals, np.mean(fca_r2, axis=0), color=colors[1])
+    # ax.fill_between(dim_vals, np.mean(dca_r2, axis=0) + np.std(dca_r2, axis=0)/np.sqrt(28),
+    #                 np.mean(dca_r2, axis=0) - np.std(dca_r2, axis=0)/np.sqrt(28), color=colors[0], alpha=0.25)
+    # ax.plot(dim_vals, np.mean(dca_r2, axis=0), color=colors[0])
+    # ax.fill_between(dim_vals, np.mean(kca_r2, axis=0) + np.std(kca_r2, axis=0)/np.sqrt(28),
+    #                 np.mean(kca_r2, axis=0) - np.std(kca_r2, axis=0)/np.sqrt(28), color=colors[1], alpha=0.25)
+    # ax.plot(dim_vals, np.mean(kca_r2, axis=0), color=colors[1])
+    ax.fill_between(dim_vals, np.mean(fca_r2, axis=0) + np.std(fca_r2, axis=0)/np.sqrt(28),
+                    np.mean(fca_r2, axis=0) - np.std(fca_r2, axis=0)/np.sqrt(28), color=colors[1], alpha=0.25)
+    ax.plot(dim_vals, np.mean(fca_r2, axis=0), color=colors[1])
 
-    # ax.fill_between(dim_vals, np.mean(pca_r2, axis=0) + np.std(pca_r2, axis=0)/np.sqrt(28),
-    #                 np.mean(pca_r2, axis=0) - np.std(pca_r2, axis=0)/np.sqrt(28), color=colors[0], alpha=0.25)
-    # ax.plot(dim_vals, np.mean(pca_r2, axis=0), color=colors[0])
+    ax.fill_between(dim_vals, np.mean(pca_r2, axis=0) + np.std(pca_r2, axis=0)/np.sqrt(28),
+                    np.mean(pca_r2, axis=0) - np.std(pca_r2, axis=0)/np.sqrt(28), color=colors[0], alpha=0.25)
+    ax.plot(dim_vals, np.mean(pca_r2, axis=0), color=colors[0])
 
-    # ax.set_xlabel('Dimension', fontsize=14)
-    # ax.set_ylabel('Velocity Decoding ' + r'$r^2$', fontsize=14)
-    # ax.tick_params(axis='x', labelsize=12)
-    # ax.tick_params(axis='y', labelsize=12)
+    ax.set_xlabel('Dimension', fontsize=14)
+    ax.set_ylabel('Velocity Decoding ' + r'$r^2$', fontsize=14)
+    ax.tick_params(axis='x', labelsize=12)
+    ax.tick_params(axis='y', labelsize=12)
 
-    # ax.legend(['FCCA', 'PCA'], loc='lower right', fontsize=14)
-    # ax.set_title('Macaque M1', fontsize=16)
-    # fig.tight_layout()
-    # fig.savefig('/home/akumar/nse/neural_control/figs/final/indy_vel_decoding.pdf', bbox_inches='tight', pad_inches=0)
+    ax.legend(['FCCA', 'PCA'], loc='lower right', fontsize=14)
+    ax.set_title('Macaque M1', fontsize=16)
+    fig.tight_layout()
+    fig.savefig('/home/akumar/nse/neural_control/figs/final/indy_vel_decoding.pdf', bbox_inches='tight', pad_inches=0)
 
     with open('/home/akumar/nse/neural_control/data/peanut_decoding_df.dat', 'rb') as f:
         peanut_decoding_df = pickle.load(f)

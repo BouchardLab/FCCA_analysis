@@ -185,10 +185,10 @@ if __name__ == '__main__':
     windows = [(int(wc - window_width//2), int(wc + window_width//2)) for wc in window_centers]
 
     if comm.rank == 0:
-        # with open('/home/akumar/nse/neural_control/data/indy_dimreduc_nocv.dat', 'rb') as f:
-        #     sabes_df = pickle.load(f)
-        with open('/home/akumar/nse/neural_control/data/sabes_dimreduc_nocv.dat', 'rb') as f:
+        with open('/home/akumar/nse/neural_control/data/indy_dimreduc_nocv.dat', 'rb') as f:
             sabes_df = pickle.load(f)
+        # with open('/home/akumar/nse/neural_control/data/sabes_dimreduc_nocv.dat', 'rb') as f:
+        #     sabes_df = pickle.load(f)
 
         sabes_df = pd.DataFrame(sabes_df)
 
@@ -199,23 +199,22 @@ if __name__ == '__main__':
         coeffcca = []
 
         for d, dimval in enumerate(dimvals):
-            df = apply_df_filters(sabes_df, data_file=data_file, dim=dimval)
-            assert(df.shape[0] == 1)
+            # df = apply_df_filters(sabes_df, data_file=data_file, dim=dimval)
+            # assert(df.shape[0] == 1)
+            # coefpca.append(df.iloc[0]['pcacoef'])
+            # coeffcca.append(df.iloc[0]['lqgcoef'])            
+
+            dffca = apply_df_filters(sabes_df, data_file=data_file, dim=dimval, dimreduc_method='LQGCA')
+            dfpca = apply_df_filters(sabes_df, data_file=data_file, dim=dimval, dimreduc_method='PCA')
+
+            assert(dffca.shape[0] == 1)
+            assert(dfpca.shape[0] == 1)
             
-            coefpca.append(df.iloc[0]['pcacoef'])
-            coeffcca.append(df.iloc[0]['lqgcoef'])            
+            coefpca.append(dfpca.iloc[0]['coef'])
+            coeffcca.append(dffca.iloc[0]['coef'][:, 0:dimval])
 
-            # dffca = apply_df_filters(sabes_df, data_file=data_file, dim=dimval, dimreduc_method='LQGCA')
-            # dfpca = apply_df_filters(sabes_df, data_file=data_file, dim=dimval, dimreduc_method='PCA')
-
-            # assert(dffca.shape[0] == 1)
-            # assert(dfpca.shape[0] == 1)
-            
-            # coefpca.append(dfpca.iloc[0]['coef'])
-            # coeffcca.append(dffca.iloc[0]['coef'][:, 0:dimval])
-
-        dat = load_sabes('/mnt/Secondary/data/sabes/%s' % data_file)
-        # dat = load_sabes(data_file)
+        #dat = load_sabes('/mnt/Secondary/data/sabes/%s' % data_file)
+        dat = load_sabes(data_file)
         data_file = data_file.split('/')[-1]
         # dat = load_sabes('/mnt/sdb1/nc_data/sabes/%s' % data_file)
         dat = reach_segment_sabes(dat, start_times[data_file.split('.mat')[0]])
@@ -282,7 +281,7 @@ if __name__ == '__main__':
                 
 
     windows = np.array(windows)
-    dpath = '/home/akumar/nse/neural_control/data/decodingvt2'
+    dpath = '/home/akumar/nse/neural_control/data/decodingvt3'
     #dpath = '/mnt/sdb1/nc_data/decodingvt'
     with open('%s/didx%d_dim%d_%s_%d.dat' % (dpath, didx, comm.rank, filter_string, measure_from_end), 'wb') as f:
         f.write(pickle.dumps(wr2))

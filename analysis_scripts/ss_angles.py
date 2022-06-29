@@ -23,7 +23,7 @@ from dstableFGM import dstable_descent
 
 if __name__ == '__main__':
 
-    with open('/home/akumar/nse/neural_control/data/indy_decoding_df.dat', 'rb') as f:
+    with open('/home/akumar/nse/neural_control/data/indy_decoding_df2.dat', 'rb') as f:
         sabes_df = pickle.load(f)
     sabes_df = pd.DataFrame(sabes_df)
 
@@ -32,7 +32,7 @@ if __name__ == '__main__':
     data_files = np.unique(sabes_df['data_file'].values)
     folds = np.arange(5)
     dimreduc_methods = dimreduc_methods = ['PCA', 'LQGCA']
-    LQGCA_dimreduc_args = [{'T':3, 'loss_type':'trace', 'n_init':5}]
+    LQGCA_dimreduc_args = [{'T':3, 'loss_type':'trace', 'n_init':10}]
     dimvals = np.unique(sabes_df['dim'].values)
 
     # Pick one

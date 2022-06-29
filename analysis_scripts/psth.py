@@ -71,7 +71,7 @@ def get_top_neurons(dimreduc_df, method1='FCCA', method2='PCA', n=10, pairwise_e
                 for fold_idx in range(5):            
                     df_ = apply_df_filters(dimreduc_df, data_file=data_file, fold_idx=fold_idx, dim=6, dimreduc_method=dimreduc_method)
                     if dimreduc_method == 'LQGCA':
-                        df_ = apply_df_filters(df_, dimreduc_args={'T': 3, 'loss_type': 'trace', 'n_init': 5})
+                        df_ = apply_df_filters(df_, dimreduc_args={'T': 3, 'loss_type': 'trace', 'n_init': 10})
                     V = df_.iloc[0]['coef']
                     if dimreduc_method == 'PCA':
                         V = V[:, 0:2]        
@@ -190,14 +190,17 @@ def PSTH_plot(top_neurons_df, path):
 
                     if i == 0:
                         ax[2 * (h//7) + i, h % 7].plot(time, x_, 'k', alpha=0.5)
+                        ax[2 * (h//7) + i, h % 7].set_title(data_file)
+
                     if i == 1:
                         ax[2 * (h//7) + i, h % 7].plot(time, x_, 'r', alpha=0.5)
+                        ax[2 * (h//7) + i, h % 7].set_title(data_file)
                 except:
                     continue
 
     for i in range(ndf):
-        ax[0, i].set_title('Top FCCA neurons', fontsize=14)
-        ax[1, i].set_title('Top PCA neurons', fontsize=14)
+        #ax[0, i].set_title('Top FCCA neurons', fontsize=14)
+        #ax[1, i].set_title('Top PCA neurons', fontsize=14)
         ax[1, i].set_xlabel('Time (ms)')
         ax[0, i].set_ylabel('Z-scored trial averaged firing rate')
 
@@ -385,7 +388,7 @@ if __name__ == '__main__':
     globals()['bin_width'] = bin_width
 
     # Load dimreduc_df
-    with open('/home/akumar/nse/neural_control/data/indy_decoding_df.dat', 'rb') as f:
+    with open('/home/akumar/nse/neural_control/data/indy_decoding_df2.dat', 'rb') as f:
         dimreduc_df = pd.DataFrame(pickle.load(f))
 
     method1 = 'FCCA'

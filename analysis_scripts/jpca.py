@@ -56,6 +56,13 @@ start_times = {'indy_20160426_01': 0,
 if __name__ == '__main__':
 
 
+    # Where to save?
+    if len(sys.argv) > 1:
+        figpath = sys.argv[1]
+    else:
+        figpath = '/home/akumar/nse/neural_control/figs/final'
+
+
     with open('/home/akumar/nse/neural_control/data/indy_decoding_df2.dat', 'rb') as f:
         sabes_df = pickle.load(f)
     sabes_df = pd.DataFrame(sabes_df)
@@ -265,7 +272,7 @@ if __name__ == '__main__':
     ax[1].set_xticks([])
     ax[1].set_yticks([])
     fig.tight_layout()
-    fig.savefig('/home/akumar/nse/neural_control/figs/final/trajectories.pdf', bbox_inches='tight', pad_inches=0)
+    fig.savefig('%s/trajectories.pdf' % figpath, bbox_inches='tight', pad_inches=0)
 
     # Boxplots
     fig, ax = plt.subplots(1, 1, figsize=(5, 2))
@@ -290,4 +297,4 @@ if __name__ == '__main__':
     # ax.set_xlim([13, 0])
 
     fig.tight_layout()
-    fig.savefig('/home/akumar/nse/neural_control/figs/final/Dist_to_U.pdf', bbox_inches='tight', pad_inches=0)
+    fig.savefig('%s/Dist_to_U.pdf' % figpath, bbox_inches='tight', pad_inches=0)

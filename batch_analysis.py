@@ -676,7 +676,6 @@ def main(cmd_args, args):
         comm = None
         ncomms = None
 
-
     if cmd_args.analysis_type == 'var':
 
         ncomms=comm.size

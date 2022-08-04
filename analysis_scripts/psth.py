@@ -375,6 +375,12 @@ def cross_cov_plots(method1, method2, tau_max, mag, stats, p, path):
 
 if __name__ == '__main__':
 
+    # Where to save?
+    if len(sys.argv) > 1:
+        figpath = sys.argv[1]
+    else:
+        figpath = '/home/akumar/nse/neural_control/figs/final'
+
     # Add data_path, T, n, bin_width to globals
     # Set these
     data_path = '/mnt/Secondary/data/sabes'
@@ -398,10 +404,10 @@ if __name__ == '__main__':
     top_neurons_df = get_top_neurons(dimreduc_df, method1=method1, method2=method2, n=10, pairwise_exclude=True)
     
     # Plot PSTH
-    PSTH_plot(top_neurons_df, '/home/akumar/nse/neural_control/figs')
+    PSTH_plot(top_neurons_df, figpath)
 
     # Cross-covariance stuff
     cross_covs, cross_covs01 = cross_cov_calc(top_neurons_df)
     tau_max, mag, stats, p = cross_covs_statistics(cross_covs, cross_covs01)
-    cross_cov_plots(method1, method2, tau_max, mag, stats, p, '/home/akumar/nse/neural_control/figs')
+    cross_cov_plots(method1, method2, tau_max, mag, stats, p, figpath)
     

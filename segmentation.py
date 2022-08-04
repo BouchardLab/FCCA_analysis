@@ -83,7 +83,7 @@ def measure_straight_dev(trajectory, start, end):
     straight_dev /= straight_norm
     return straight_dev
 
-def reach_segment_sabes(dat, start_time=None, data_file=None):
+def reach_segment_sabes(dat, start_time=None, data_file=None, keep_high_error=False):
 
     if start_time is None:
         start_time = start_times[data_file]
@@ -151,8 +151,7 @@ def reach_segment_sabes(dat, start_time=None, data_file=None):
         cursor_1 = dat['behavior'][valid_transition_times[target_pairs[i][1]] - time_win:\
                                    valid_transition_times[target_pairs[i][1]]]
 
-        # Edited 6/8/2022 - Take the average of start and end errors 
-        target_error_pairs[i] = np.mean([np.mean(np.linalg.norm(cursor_0 - target_locs[target_pairs[i][0]])),
+        target_error_pairs[i] = np.max([np.mean(np.linalg.norm(cursor_0 - target_locs[target_pairs[i][0]])),
                                          np.mean(np.linalg.norm(cursor_1 - target_locs[target_pairs[i][1]]))])
 
     # Thresholding by error threshold (how far from the start and end targets is the reach)
@@ -174,21 +173,26 @@ def reach_segment_sabes(dat, start_time=None, data_file=None):
     # Tuple of indices that describes start and end of reach
     transition_times = []
     transition_vectors = []
+    nzeros = []
 
-    for i in range(len(target_error_pairs)):
-        
+    indices_kept = []
+
+    for i in range(len(target_error_pairs)):        
         # Keep this transition
-        if target_error_pairs[i] < err_thresh and n_zeros[i] < 200:
+        if (target_error_pairs[i] < err_thresh and n_zeros[i] < 200) or keep_high_error:
             valid_target_pairs.append((target_locs[target_pairs[i][0]], target_locs[target_pairs[i][1]]))        
             reach_duration.append(time_on_target[target_pairs[i][1]])
             transition_times.append((valid_transition_times[target_pairs[i][0]] + 1,
-                                     valid_transition_times[target_pairs[i][1]]))
+                                    valid_transition_times[target_pairs[i][1]]))
             transition_vectors.append(target_locs[target_pairs[i][1]] - target_locs[target_pairs[i][0]])
-        else:
+            indices_kept.append(i)
+        else: 
             continue
 
-    target_error_pairs = target_error_pairs[np.bitwise_and(target_error_pairs < err_thresh,
-                                                       n_zeros < 200)]
+
+    target_error_pairs = target_error_pairs[np.array(indices_kept)]
+    n_zeros = n_zeros[np.array(indices_kept)]
+
     transition_orientation = np.zeros(len(transition_vectors))
     refvec = np.array([1, 0])
     for i in range(len(transition_vectors)):
@@ -216,5 +220,6 @@ def reach_segment_sabes(dat, start_time=None, data_file=None):
     dat['straight_dev'] = straight_dev
     dat['target_pair_error'] = target_error_pairs
     dat['transition_orientation'] = transition_orientation
+    dat['npeaks'] = n_zeros
 
     return dat

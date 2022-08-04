@@ -23,8 +23,14 @@ from decoders import lr_decoder
 
 if __name__ == '__main__':
 
+    # Where to save?
+    if len(sys.argv) > 1:
+        figpath = sys.argv[1]
+    else:
+        figpath = '/home/akumar/nse/neural_control/figs/final'
+
     # # Sequentially do indy, peanut decoding
-    with open('/home/akumar/nse/neural_control/data/indy_decoding_df2.dat', 'rb') as f:
+    with open('/home/akumar/nse/neural_control/data/indy_decoding_marginal.dat', 'rb') as f:
         rl = pickle.load(f)
     sabes_df = pd.DataFrame(rl)
     sabes_df = apply_df_filters(sabes_df, dimreduc_method='LQGCA')
@@ -97,7 +103,7 @@ if __name__ == '__main__':
     ax.legend(['FCCA', 'PCA'], loc='lower right', fontsize=14)
     ax.set_title('Macaque M1', fontsize=16)
     fig.tight_layout()
-    fig.savefig('/home/akumar/nse/neural_control/figs/final/indy_vel_decoding.pdf', bbox_inches='tight', pad_inches=0)
+    fig.savefig('%s/indy_vel_decoding.pdf' % figpath, bbox_inches='tight', pad_inches=0)
 
     with open('/home/akumar/nse/neural_control/data/peanut_decoding_df.dat', 'rb') as f:
         peanut_decoding_df = pickle.load(f)
@@ -182,5 +188,5 @@ if __name__ == '__main__':
     ax.tick_params(axis='both', labelsize=12)
 
     fig.tight_layout()
-    fig.savefig('/home/akumar/nse/neural_control/figs/final/peanut_decoding.pdf', bbox_inches='tight', pad_inches=0)
+    fig.savefig('%s/peanut_decoding.pdf' % figpath, bbox_inches='tight', pad_inches=0)
     # fig.savefig('peanut_decoding.pdf', bbox_inches='tight', pad_inches=0)

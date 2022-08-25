@@ -154,6 +154,7 @@ def kf_decoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=
     return kf_r2_pos, kf_r2_vel, kf_r2_acc, kf
 
 def lr_preprocess(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window, include_velocity, include_acc):
+
     # If no trial structure is present, convert to a list for easy coding
     if np.ndim(Xtrain) == 2:
         Xtrain = [Xtrain]
@@ -177,7 +178,6 @@ def lr_preprocess(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_wind
     if testlag > 0:
         Xtest = [x[:-trainlag, :] for x in Xtest]
         Ztest = [z[trainlag:, :] for z in Ztest]
-
 
     # Apply decoding window
     Xtrain = [form_lag_matrix(x, decoding_window) for x in Xtrain]
@@ -233,7 +233,6 @@ def lr_decoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=
 
     Xtest, Xtrain, Ztest, Ztrain = lr_preprocess(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window, include_velocity, include_acc)
     decodingregressor = LinearRegression(normalize=True, fit_intercept=True)
-
     decodingregressor.fit(Xtrain, Ztrain)
     Zpred = decodingregressor.predict(Xtest)
 

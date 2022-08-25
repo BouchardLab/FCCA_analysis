@@ -31,7 +31,16 @@ start_times = {'indy_20160426_01': 0,
                'indy_20170124_01': 0,
                'indy_20170127_03': 0,
                'indy_20170131_02': 0,
-               }
+               'loco_20170210_03':0, 
+               'loco_20170213_02':0, 
+               'loco_20170214_02':0, 
+               'loco_20170215_02':0, 
+               'loco_20170216_02': 0, 
+               'loco_20170217_02': 0, 
+               'loco_20170227_04': 0, 
+               'loco_20170228_02': 0, 
+               'loco_20170301_05':0, 
+               'loco_20170302_02':0}
 
 def measure_straight_dev(trajectory, start, end):
     # Translate to the origin relative to the 1st target location
@@ -84,7 +93,7 @@ def measure_straight_dev(trajectory, start, end):
     return straight_dev
 
 def reach_segment_sabes(dat, start_time=None, data_file=None, keep_high_error=False):
-
+    print('Reminder that start times depend on the bin size')
     if start_time is None:
         start_time = start_times[data_file]
 

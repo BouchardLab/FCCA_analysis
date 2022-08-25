@@ -454,7 +454,7 @@ class SubspaceIdentification():
             # Get Toeplitz, Hankel structures
             hankel_toeplitz = self.form_hankel_toeplitz(ccm, T)
         # Factorize
-        zt, zt1, zbart, zbart1 = self.get_predictor_space(y, hankel_toeplitz, T, int(order))
+        zt, zt1 = self.get_predictor_space(y, hankel_toeplitz, T, int(order))
         # Identify (forward time)
         A, C, Cbar, rho_A, rho_C = self.estimator.fit(y[self.T-1:-1, :], zt, zt1, return_residuals=True)
 

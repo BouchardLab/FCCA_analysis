@@ -16,10 +16,10 @@ import pdb
 from segmentation import reach_segment_sabes
 
 
-from pynwb import NWBHDF5IO
+#from pynwb import NWBHDF5IO
 
-def filter_window(signal, window_name='hann', window_params=(), window_length=10):
-    window = get_window((window_name, *window_params), window_length)
+def filter_window(signal, window_name,  window_length=10):
+    window = get_window(window_name, window_length)
     signal = convolve1d(signal, window)
     return signal
 
@@ -131,8 +131,9 @@ def postprocess_spikes(spike_times, T, bin_width, boxcox, filter_fn, filter_kwar
 
     # Did the trial/unit have enough spikes?
     insufficient_spikes = np.zeros(spike_times.shape)
-    print('Processing spikes')
-    for i in tqdm(range(spike_times.shape[0])):
+    #print('Processing spikes')
+    #for i in tqdm(range(spike_times.shape[0])):
+    for i in range(spike_times.shape[0]):
         for j in range(spike_times.shape[1]):    
 
             # Ignore this trial/unit combo
@@ -338,6 +339,7 @@ def load_sabes(filename, bin_width=50, boxcox=0.5, filter_fn='none', filter_kwar
             indices = M1_indices
         elif region == 'S1':
             indices = S1_indices
+            print(len(indices))
         elif region == 'both':
             indices = list(range(n_channels))
 
@@ -425,7 +427,7 @@ def load_peanut_across_epochs(fpath, epochs, spike_threshold, **loader_kwargs):
         unit_idxs = np.isin(dat['unit_ids'], np.array(list(unit_id_intersection)).astype(int)) 
 
 def load_peanut(fpath, epoch, spike_threshold, bin_width=25, boxcox=0.5,
-                filter_fn='none', speed_threshold=4, region='HPc', **filter_kwargs):
+                filter_fn='none', speed_threshold=4, region='HPc', filter_kwargs={}):
     '''
         Parameters:
             fpath: str

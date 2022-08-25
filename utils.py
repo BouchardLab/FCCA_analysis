@@ -82,6 +82,9 @@ def apply_df_filters(dtfrm, invert=False, **kwargs):
                 else:
                     filtered_df = filtered_df.loc[filtered_df[key] == value]
 
+        # if filtered_df.shape[0] == 0:
+        #     print('Key %s reduced size to 0!' % key)
+
     return filtered_df
 
 

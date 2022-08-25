@@ -23,7 +23,7 @@ LOADER_DICT = {'sabes': load_sabes, 'shenoy': mpi_load_shenoy, 'peanut': load_pe
 def main(args):
     total_start = time.time() 
 
-    dat = LOADER_DICT[args['loader']](args['data_file'], args['loader_args'])
+    dat = LOADER_DICT[args['loader']](args['data_file'], **args['loader_args'])
     X = np.squeeze(dat['spike_rates'])
 
     split_idxs = list(KFold(5).split(X))
@@ -31,8 +31,8 @@ def main(args):
     savepath = args['results_file'].split('.dat')[0]
 
     result = {}
-    result['fold_idx'] = args['fold_idxs']
-    model_order = args['model_order']
+    result['fold_idx'] = args['task_args']['fold_idx']
+    model_order = args['task_args']['model_order']
     result['model_order'] = model_order
 
     # Fit subspace identification explicitly first

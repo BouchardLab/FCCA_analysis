@@ -44,7 +44,7 @@ if __name__ == '__main__':
     dimvals = np.unique(sabes_df['dim'].values)
 
     # Pick one
-    decoder_arg = sabes_df.iloc[0]['decoder_args']s
+    decoder_arg = sabes_df.iloc[0]['decoder_args']
     df = apply_df_filters(sabes_df, decoder_args=decoder_arg)
 
     for i, data_file in enumerate(data_files):

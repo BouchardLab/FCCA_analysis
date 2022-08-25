@@ -159,7 +159,7 @@ if __name__ == '__main__':
     ax[0].tick_params(axis='x', labelsize=12)
     ax[0].tick_params(axis='y', labelsize=12)
 
-    ax[0].legend(['FCCA/FCCA mar. delta', 'PCA/PCA mar. delta'], loc='lower right', fontsize=14)
+    ax[0].legend(['FCCA/FCCAm', 'PCA/PCAm'], loc='lower right', fontsize=12)
     ax[0].set_title('Paired differences in decoding', fontsize=16)
 
     #fig.savefig('%s/decoding_differences.pdf' % figpath, bbox_inches='tight', pad_inches=0)
@@ -207,6 +207,8 @@ if __name__ == '__main__':
     bplot = ax[1].boxplot([np.mean(ss_angles[:, :, 0, :], axis=-1).ravel(), np.mean(ss_angles[:, :, 1, :], axis=-1).ravel(), np.mean(ss_angles[:, :, 2, :], axis=-1).ravel(), np.mean(ss_angles[:, :, 3, :], axis=-1).ravel()], 
                   patch_artist=True, medianprops=medianprops, notch=True, vert=False, showfliers=False)
     ax[1].set_yticklabels(['FCCA/PCA', 'PCA/PCAm', 'FCCA/FCCAm', 'FCCAm/PCAm'])
+    ax[1].set_xlim([0, np.pi/2])
+    ax[1].set_xlabel('Subspace angles (rads)')
 
     colors = ['blue', 'black', 'red', 'green']
     for patch, color in zip(bplot['boxes'], colors):

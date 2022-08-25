@@ -160,20 +160,20 @@ if __name__ == '__main__':
 
     cmd_args = parser.parse_args()
 
-    state_dim = 20
-    obs_dim = 10
+    state_dim = 10
+    obs_dim = 20
 
     model_reps = 1
-    trajectory_reps = 10
+    trajectory_reps = 1
 
-    N = [int(5e2), int(1e3), int(5e3)]
+    N = [int(5e3)]
     # Test (1) How the different model selection criteria perform in MOE identification 
     # (2) Whether forward vs. reverse time estimates give systematically better predictions
     # (3) OLS vs. Ridge vs. IteratedStability in terms of fit to cross-correlation matrices
 
     n_folds = 5
     #model_orders = np.arange(15, 27, 2)
-    model_orders = np.array([1, 2, 3, 4])
+    model_orders = np.array([5, 10])
 
     # Form outer product over tasks
     tasks = list(itertools.product(np.arange(model_reps), np.arange(trajectory_reps), N, range(n_folds), model_orders))
@@ -204,5 +204,5 @@ if __name__ == '__main__':
         pool = SerialPool()
 
     if len(tasks) > 0:
-        pool.map(worker.VARfit, tasks)
+        pool.map(worker.stableMLfit, tasks)
     pool.close()

@@ -154,6 +154,7 @@ def kf_decoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=
     return kf_r2_pos, kf_r2_vel, kf_r2_acc, kf
 
 def lr_preprocess(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window, include_velocity, include_acc):
+
     # If no trial structure is present, convert to a list for easy coding
     if np.ndim(Xtrain) == 2:
         Xtrain = [Xtrain]
@@ -177,7 +178,6 @@ def lr_preprocess(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_wind
     if testlag > 0:
         Xtest = [x[:-trainlag, :] for x in Xtest]
         Ztest = [z[trainlag:, :] for z in Ztest]
-
 
     # Apply decoding window
     Xtrain = [form_lag_matrix(x, decoding_window) for x in Xtrain]
@@ -221,7 +221,6 @@ def lr_encoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=
     # Ztest = Ztest[:, 0:4]
     # Ztrain = Ztrain[:, 0:4]
 
-
     encodingregressor.fit(Ztrain, Xtrain)
     Xpred = encodingregressor.predict(Ztest)
 
@@ -234,7 +233,6 @@ def lr_decoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=
 
     Xtest, Xtrain, Ztest, Ztrain = lr_preprocess(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window, include_velocity, include_acc)
     decodingregressor = LinearRegression(normalize=True, fit_intercept=True)
-
     decodingregressor.fit(Xtrain, Ztrain)
     Zpred = decodingregressor.predict(Xtest)
 
@@ -252,33 +250,35 @@ def lr_decoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=
         lr_r2_pos = r2_score(Ztest, Zpred)
         return lr_r2_pos, decodingregressor
 
-def apply_window(X, Z, lag, window, transition_times, decoding_window, include_velocity, include_acc):
+def apply_window(X, Z, lag, window, transition_times, decoding_window, include_velocity, include_acc, measure_from_end):
 
     # Segment the time series with respect to the transition times (including lag)
     xx = []
     zz = []
 
-    # In this case, we have been given a list of windows for each transition.
-    if len(window) > 2:
-        for i, t in enumerate(transition_times):
-            # Enforce that the next reach must not have started within the window
-            if i < len(transition_times) - 1:
-                if t + window[i][1] < transition_times[i + 1]:
-                    xx.append(X[t - lag + window[i][0]:t - lag + window[i][1]])
-                    zz.append(Z[t + window[i][0]:t + window[i][1]])
-            else:
-                xx.append(X[t - lag + window[i][0]:t - lag + window[i][1]])
-                zz.append(Z[t + window[i][0]:t + window[i][1]])
-    else:
-        for i, t in enumerate(transition_times):
-            # Enforce that the next reach must not have started within the window
-            if i < len(transition_times) - 1:
-                if t + window[1] < transition_times[i + 1]:
-                    xx.append(X[t - lag + window[0]:t - lag + window[1]])
-                    zz.append(Z[t + window[0]:t + window[1]])
-            else:
-                xx.append(X[t - lag + window[0]:t - lag + window[1]])
-                zz.append(Z[t + window[0]:t + window[1]])
+    valid_idxs = []
+
+    def valid_reach(t0, t1, w, measure_from_end):
+        if measure_from_end:
+            window_in_reach = t1 - w[1] > t0
+        else:
+            window_in_reach = t0 + w[1] < t1
+        return window_in_reach
+
+    # If given a single window, duplicate it across all transition times
+    if len(window) == 2:
+        window = [window for _ in range(len(transition_times))]
+
+    for i, (t0, t1) in enumerate(transition_times):
+        # Enforce that the previous reach must not have began after the window begins
+        assert(valid_reach(t0,  t1, window[i], measure_from_end))
+
+        if measure_from_end:
+            xx.append(X[t1 - lag - window[i][1]:t1 - lag - window[i][0]])
+            zz.append(Z[t1 - window[i][1]:t1 - window[i][0]])
+        else:
+            xx.append(X[t0 - lag + window[i][0]:t0 - lag + window[i][1]])
+            zz.append(Z[t0 + window[i][0]:t0 + window[i][1]])
 
     if len(xx) > 0:
         # Apply decoding window
@@ -296,7 +296,7 @@ def apply_window(X, Z, lag, window, transition_times, decoding_window, include_v
         return None, None
 
 def lr_decode_windowed(X, Z, lag, window, transition_times, train_idxs, test_idxs=None, 
-                       decoding_window=1, include_velocity=True, include_acc=True):
+                       decoding_window=1, include_velocity=True, include_acc=True, measure_from_end=False):
 
     behavior_dim = Z.shape[-1]
 
@@ -310,18 +310,22 @@ def lr_decode_windowed(X, Z, lag, window, transition_times, train_idxs, test_idx
     if win_min >= 0:
         win_min = 0
 
-    tt_train = [t[0] for t in transition_times 
-        if t[0] >= min(train_idxs) and t[0] <= max(train_idxs) and t[0] > (lag + np.abs(win_min))]
-    Xtrain, Ztrain = apply_window(X, Z, lag, window, tt_train, decoding_window, include_velocity, include_acc)
+    # Filter out by transitions that lie within the train idxs, and stay clear of the start and end
+    tt_train = [t for t in transition_times 
+                if t[0] >= min(train_idxs) and t[1] <= max(train_idxs) and t[0] > (lag + np.abs(win_min)) and t[1] < (Z.shape[0] - lag - np.abs(win_min))]
+    
+    Xtrain, Ztrain = apply_window(X, Z, lag, window, tt_train, decoding_window, include_velocity, include_acc, measure_from_end)
+
     if Xtrain is None:
-        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, None, 0
+        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, None
     else:
         n = len(Xtrain)
 
     if test_idxs is not None:
-        tt_test = [t[0] for t in transition_times 
-                   if t[0] >= min(test_idxs) and t[0] <= max(test_idxs) and t[0] > (lag + np.abs(win_min))]
-        Xtest, Ztest = apply_window(X, Z, lag, window, tt_test, decoding_window, include_velocity, include_acc)
+        # Filter out by transitions that lie within the test idxs, and stay clear of the start and end
+        tt_test = [t for t in transition_times 
+                   if t[0] >= min(test_idxs) and t[0] <= max(test_idxs) and t[0] > (lag + np.abs(win_min)) and t[1] < (Z.shape[0] - lag - np.abs(win_min))]
+        Xtest, Ztest = apply_window(X, Z, lag, window, tt_test, decoding_window, include_velocity, include_acc, measure_from_end)
     else:
         Xtest = None
         Ztest = None
@@ -378,7 +382,7 @@ def lr_decode_windowed(X, Z, lag, window, transition_times, train_idxs, test_idx
             lr_r2_velt = np.nan
             lr_r2_acct = np.nan
 
-        return lr_r2_pos, lr_r2_vel, lr_r2_acc, lr_r2_post, lr_r2_velt, lr_r2_acct, mse_train, mse_test, decodingregressor, n
+        return lr_r2_pos, lr_r2_vel, lr_r2_acc, lr_r2_post, lr_r2_velt, lr_r2_acct, mse_train, mse_test, decodingregressor
 
     elif include_velocity:
         raise NotImplementedError

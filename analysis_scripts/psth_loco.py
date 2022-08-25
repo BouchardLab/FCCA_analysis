@@ -25,36 +25,6 @@ from utils import apply_df_filters, calc_loadings
 from loaders import load_sabes
 from segmentation import reach_segment_sabes
 
-start_times = {'indy_20160426_01': 0,
-               'indy_20160622_01':1700,
-               'indy_20160624_03': 500,
-               'indy_20160627_01': 0,
-               'indy_20160630_01': 0,
-               'indy_20160915_01': 0,
-               'indy_20160921_01': 0,
-               'indy_20160930_02': 0,
-               'indy_20160930_05': 300,
-               'indy_20161005_06': 0,
-               'indy_20161006_02': 350,
-               'indy_20161007_02': 950,
-               'indy_20161011_03': 0,
-               'indy_20161013_03': 0,
-               'indy_20161014_04': 0,
-               'indy_20161017_02': 0,
-               'indy_20161024_03': 0,
-               'indy_20161025_04': 0,
-               'indy_20161026_03': 0,
-               'indy_20161027_03': 500,
-               'indy_20161206_02': 5500,
-               'indy_20161207_02': 0,
-               'indy_20161212_02': 0,
-               'indy_20161220_02': 0,
-               'indy_20170123_02': 0,
-               'indy_20170124_01': 0,
-               'indy_20170127_03': 0,
-               'indy_20170131_02': 0,
-               }
-
 def get_top_neurons(dimreduc_df, method1='FCCA', method2='PCA', n=10, pairwise_exclude=True):
 
     data_path = globals()['data_path']
@@ -69,13 +39,12 @@ def get_top_neurons(dimreduc_df, method1='FCCA', method2='PCA', n=10, pairwise_e
 
     for i, data_file in tqdm(enumerate(data_files)):
             loadings = []
-            for dimreduc_method in ['DCA', 'KCA', 'LQGCA', 'PCA']:
+            for dimreduc_method in ['LQGCA', 'PCA']:
                 loadings_fold = []
                 for fold_idx in range(5):            
                     df_ = apply_df_filters(dimreduc_df, data_file=data_file, fold_idx=fold_idx, dim=6, dimreduc_method=dimreduc_method)
                     if dimreduc_method == 'LQGCA':
-                        df_ = apply_df_filters(df_, dimreduc_args={'T': 3, 'loss_type': 'trace', 'n_init': 10})
-                    V = df_.iloc[0]['coef']
+                        V = df_.iloc[0]['coef']
                     if dimreduc_method == 'PCA':
                         V = V[:, 0:2]        
                     loadings_fold.append(calc_loadings(V))
@@ -86,10 +55,8 @@ def get_top_neurons(dimreduc_df, method1='FCCA', method2='PCA', n=10, pairwise_e
             for j in range(loadings[0].size):
                 d_ = {}
                 d_['data_file'] = data_file
-                d_['DCA_loadings'] = loadings[0][j]
-                d_['KCA_loadings'] = loadings[1][j]
-                d_['FCCA_loadings'] = loadings[2][j]
-                d_['PCA_loadings'] = loadings[3][j]
+                d_['FCCA_loadings'] = loadings[0][j]
+                d_['PCA_loadings'] = loadings[1][j]
                 d_['nidx'] = j
                 loadings_l.append(d_)                
 
@@ -100,53 +67,45 @@ def get_top_neurons(dimreduc_df, method1='FCCA', method2='PCA', n=10, pairwise_e
     n = 10
     for i, data_file in tqdm(enumerate(data_files)):
         df_ = apply_df_filters(loadings_df, data_file=data_file)
-        DCA_ordering = np.argsort(df_['DCA_loadings'].values)
-        KCA_ordering = np.argsort(df_['KCA_loadings'].values)
+        # DCA_ordering = np.argsort(df_['DCA_loadings'].values)
+        # KCA_ordering = np.argsort(df_['KCA_loadings'].values)
         FCCA_ordering = np.argsort(df_['FCCA_loadings'].values)
         PCA_ordering = np.argsort(df_['PCA_loadings'].values)
         
-        rank_diffs = np.zeros((DCA_ordering.size, 6))
+        rank_diffs = np.zeros((FCCA_ordering.size, 1))
         for j in range(df_.shape[0]):
-            rank_diffs[j, 0] = list(DCA_ordering).index(j) - list(KCA_ordering).index(j)
-            rank_diffs[j, 1] = list(DCA_ordering).index(j) - list(FCCA_ordering).index(j)
-            rank_diffs[j, 2] = list(DCA_ordering).index(j) - list(PCA_ordering).index(j)
-            
-            rank_diffs[j, 3] = list(KCA_ordering).index(j) - list(FCCA_ordering).index(j)
-            rank_diffs[j, 4] = list(KCA_ordering).index(j) - list(PCA_ordering).index(j)
-            
-            rank_diffs[j, 5] = list(FCCA_ordering).index(j) - list(PCA_ordering).index(j)
+            rank_diffs[j, 0] = list(FCCA_ordering).index(j) - list(PCA_ordering).index(j)
 
         # Find the top 5 neurons according to all pairwise high/low orderings
         top_neurons = np.zeros((2, n)).astype(int)
 
-
-        # User selects which pairwise comparison is desired
-        method_dict = {'PCA': PCA_ordering, 'DCA': DCA_ordering, 'KCA':KCA_ordering, 'FCCA':FCCA_ordering}
-
-        top1 = []
-        top2 = []
+        # DCA_top = set([])
+        # KCA_top = set([])
+        FCCA_top = []
+        PCA_top = []
 
         idx = 0
-        while not np.all([len(x) >= n for x in [top1, top2]]):
+        while not np.all([len(x) >= n for x in [FCCA_top, PCA_top]]):
             idx += 1
             # Take neurons from the top ordering of each method. Disregard neurons that 
             # show up in all methods
             # top_DCA = DCA_ordering[-idx]
-            top1_ = method_dict[method1][-idx]
-            top2_ = method_dict[method2][-idx]
+            top_FCCA = FCCA_ordering[-idx]
+            top_PCA = PCA_ordering[-idx]
 
-            if top1_ != top2_:
-                if top1_ not in top2:
-                    top1.append(top1_)
-                if top2_ not in top1:
-                    top2.append(top2_)
+            if top_FCCA != top_PCA:
+                if top_FCCA not in PCA_top:
+                    FCCA_top.append(top_FCCA)
+                if top_PCA not in FCCA_top:
+                    PCA_top.append(top_PCA)
             else:
                 continue
 
-        top_neurons[0, :] = top1[0:n]
-        top_neurons[1, :] = top2[0:n]
+        top_neurons[0, :] = FCCA_top[0:n]
+        top_neurons[1, :] = PCA_top[0:n] 
 
         top_neurons_l.append({'data_file':data_file, 'rank_diffs':rank_diffs, 'top_neurons': top_neurons}) 
+
     top_neurons_df = pd.DataFrame(top_neurons_l)
     
     return top_neurons_df
@@ -172,7 +131,7 @@ def heatmap_plot(top_neurons_df, path):
     for h, data_file in enumerate(data_files):
 
         df_ = apply_df_filters(top_neurons_df, data_file=data_file)
-        dat = load_sabes('%s/%s' % (data_path, data_file), boxcox=None, high_pass=False)
+        dat = load_sabes('%s/%s' % (data_path, data_file), boxcox=None, high_pass=False, region=globals()['region'])
         dat_segment = reach_segment_sabes(dat, start_time=start_times[data_file.split('.mat')[0]])
         
         T = 30
@@ -221,10 +180,10 @@ def heatmap_plot(top_neurons_df, path):
             # ax.set_aspect('equal')
             # for idx in range(cc_offdiag.shape[2]):
             #     ax.plot(idx * np.ones(30), np.arange(30), cc_offdiag[0, i, ordering[idx], :], cols[i], alpha=0.5)
-        gs.update(left=0.55, right=0.98, hspace=0.05)
+        # gs.update(left=0.55, right=0.98, hspace=0.05)
 
-    fig.tight_layout()
-    fig.savefig('%s/heatmap.pdf' % path, bbox_inches='tight', pad_inches=0)
+    # fig.tight_layout()
+    fig.savefig('%s/heatmap_S1.pdf' % path, bbox_inches='tight', pad_inches=0)
 
 
 
@@ -234,16 +193,15 @@ def PSTH_plot(top_neurons_df, path):
     n = globals()['n']
     bin_width = globals()['bin_width']
 
-    ndf = 7
-    fig, ax = plt.subplots(2 * 4, ndf, figsize=(4*ndf, 32))
+    fig, ax = plt.subplots(2 * 2, 5, figsize=(20, 16))
 
     data_files = np.unique(top_neurons_df['data_file'].values)
 
     for h, data_file in enumerate(data_files):
 
         df_ = apply_df_filters(top_neurons_df, data_file=data_file)
-        dat = load_sabes('%s/%s' % (data_path, data_file), boxcox=None, high_pass=False)
-        dat_segment = reach_segment_sabes(dat, start_time=start_times[data_file.split('.mat')[0]])
+        dat = load_sabes('%s/%s' % (data_path, data_file), boxcox=None, high_pass=False, region=globals()['region'])
+        dat_segment = reach_segment_sabes(dat, data_file=data_file.split('.mat')[0])
         
         T = 30
         t = np.array([t_[1] - t_[0] for t_ in dat_segment['transition_times']])
@@ -255,11 +213,8 @@ def PSTH_plot(top_neurons_df, path):
         for i in range(2):
             for j in range(n):
                 tn = df_.iloc[0]['top_neurons'][i, j]    
-                try:
-                    x_ = np.array([dat['spike_rates'][0, dat_segment['transition_times'][idx][0]:dat_segment['transition_times'][idx][0] + T, tn] 
-                                for idx in valid_transitions])
-                except:
-                    pdb.set_trace()
+                x_ = np.array([dat['spike_rates'][0, dat_segment['transition_times'][idx][0]:dat_segment['transition_times'][idx][0] + T, tn] 
+                            for idx in valid_transitions])
                 
                 # Mean subtract
     #            x_ -= np.mean(x_, axis=1, keepdims=True)
@@ -269,22 +224,22 @@ def PSTH_plot(top_neurons_df, path):
                     x_ = np.mean(x_, axis=0)
 
                     if i == 0:
-                        ax[2 * (h//7) + i, h % 7].plot(time, x_, 'k', alpha=0.5)
-                        ax[2 * (h//7) + i, h % 7].set_title(data_file)
+                        ax[2 * (h//5) + i, h % 5].plot(time, x_, 'k', alpha=0.5)
+                        ax[2 * (h//5) + i, h % 5].set_title(data_file)
 
                     if i == 1:
-                        ax[2 * (h//7) + i, h % 7].plot(time, x_, 'r', alpha=0.5)
-                        ax[2 * (h//7) + i, h % 7].set_title(data_file)
+                        ax[2 * (h//5) + i, h % 5].plot(time, x_, 'r', alpha=0.5)
+                        ax[2 * (h//5) + i, h % 5].set_title(data_file)
                 except:
                     continue
 
-    for i in range(ndf):
+    for i in range(5):
         #ax[0, i].set_title('Top FCCA neurons', fontsize=14)
         #ax[1, i].set_title('Top PCA neurons', fontsize=14)
         ax[1, i].set_xlabel('Time (ms)')
         ax[0, i].set_ylabel('Z-scored trial averaged firing rate')
 
-    fig.savefig('%s/PSTH.pdf' % path, bbox_inches='tight', pad_inches=0)
+    fig.savefig('%s/PSTH_S1.pdf' % path, bbox_inches='tight', pad_inches=0)
 
 def cross_cov_calc(top_neurons_df):
 
@@ -303,8 +258,8 @@ def cross_cov_calc(top_neurons_df):
 
     for h, data_file in enumerate(data_files):
         df_ = apply_df_filters(top_neurons_df, data_file=data_file)
-        dat = load_sabes('%s/%s' % (data_path, data_file), boxcox=None, high_pass=False)
-        dat_segment = reach_segment_sabes(dat, start_time=start_times[data_file.split('.mat')[0]])
+        dat = load_sabes('%s/%s' % (data_path, data_file), boxcox=None, high_pass=False, region=globals()['region'])
+        dat_segment = reach_segment_sabes(dat, data_file=data_file.split('.mat')[0])
         
         t = np.array([t_[1] - t_[0] for t_ in dat_segment['transition_times']])
         valid_transitions = np.arange(t.size)[t >= T]
@@ -398,7 +353,7 @@ def single_unit_PI(top_neurons_df):
 
     for h, data_file in enumerate(data_files):
         df_ = apply_df_filters(top_neurons_df, data_file=data_file)
-        dat = load_sabes('%s/%s' % (data_path, data_file), boxcox=None, high_pass=False)
+        dat = load_sabes('%s/%s' % (data_path, data_file), boxcox=None, high_pass=False, region=globals()['region'])
         x = dat['spike_rates'].squeeze()
         ccm = calc_cross_cov_mats_from_data(x, 10)
 
@@ -420,8 +375,8 @@ def PI_statistics(PI):
 
 def box_plots(method1, method2, tau_max, mag, PI, stats, p, path):
 
-    tau_h1 = [knn_entropy(tau_max[idx, 0, :][:, np.newaxis], k=5) for idx in range(tau_max.shape[0])]
-    tau_h2 = [knn_entropy(tau_max[idx, 1, :][:, np.newaxis], k=5) for idx in range(tau_max.shape[0])]
+    tau_h1 = [knn_entropy(tau_max[idx, 0, :][:, np.newaxis], k=3) for idx in range(tau_max.shape[0])]
+    tau_h2 = [knn_entropy(tau_max[idx, 1, :][:, np.newaxis], k=3) for idx in range(tau_max.shape[0])]
 
     data_path = globals()['data_path']
     T = globals()['T']  
@@ -429,9 +384,9 @@ def box_plots(method1, method2, tau_max, mag, PI, stats, p, path):
     bin_width = globals()['bin_width']
 
     # Plot the histograms
-    fig, ax = plt.subplots(6, 5, figsize=(25, 30))
-    for i in range(28):
-        a = ax[np.unravel_index(i, (6, 5))]
+    fig, ax = plt.subplots(2, 5, figsize=(25, 10))
+    for i in range(tau_max.shape[0]):
+        a = ax[np.unravel_index(i, (2, 5))]
         a.hist(tau_max[i, 0], alpha=0.5, bins=np.linspace(-1500, 1500, 25))
         a.hist(tau_max[i, 1], alpha=0.5)    
 
@@ -440,19 +395,19 @@ def box_plots(method1, method2, tau_max, mag, PI, stats, p, path):
         a.legend(['FCCA', 'PCA'])
 
     fig.suptitle('Peak cross-cov time, %s vs. %s' % (method1, method2))
-    fig.savefig('%s/tau_hist.pdf' % path, bbox_inches='tight', pad_inches=0)
+    fig.savefig('%s/tau_hist_S1.pdf' % path, bbox_inches='tight', pad_inches=0)
 
     # Plot the histograms
-    fig, ax = plt.subplots(6, 5, figsize=(25, 30))
-    for i in range(28):
-        a = ax[np.unravel_index(i, (6, 5))]
+    fig, ax = plt.subplots(2, 5, figsize=(25, 10))
+    for i in range(mag.shape[0]):
+        a = ax[np.unravel_index(i, (2, 5))]
         a.hist(mag[i, 0], alpha=0.5)
         a.hist(mag[i, 1], alpha=0.5)
         a.set_title('FCCA h: %.3f, PCA h:%.3f' % (np.mean(mag[i, 0]), np.mean(mag[i, 1])))
         a.legend(['FCCA', 'PCA'])
 
     fig.suptitle('Peak cross-cov magnitude, %s vs. %s' % (method1, method2))
-    fig.savefig('%s/mag_hist.pdf' % path, bbox_inches='tight', pad_inches=0)
+    fig.savefig('%s/mag_hist_S1.pdf' % path, bbox_inches='tight', pad_inches=0)
 
     avg_mag1 = np.mean(mag[:, 0, :], axis=-1)
     avg_mag2 = np.mean(mag[:, 1, :], axis=-1)
@@ -484,8 +439,8 @@ def box_plots(method1, method2, tau_max, mag, PI, stats, p, path):
         elif p < 1e-2:
             return '**'
         else:
-            raise ValueError('Very low statistical significance!')
-    
+            return '%f' % p
+
     ax[0].set_title(asterix(p[2]), fontsize=10)
     ax[1].set_title(asterix(p[3]), fontsize=10)
     ax[2].set_title(asterix(p[4]), fontsize=10)
@@ -503,7 +458,7 @@ def box_plots(method1, method2, tau_max, mag, PI, stats, p, path):
             patch.set_alpha(0.75)
 
     fig.tight_layout()
-    fig.savefig('%s/boxplots_with_PI.pdf' % path, bbox_inches='tight', pad_inches=0)
+    fig.savefig('%s/boxplots_with_PI_S1.pdf' % path, bbox_inches='tight', pad_inches=0)
     
 
 if __name__ == '__main__':
@@ -512,7 +467,7 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         figpath = sys.argv[1]
     else:
-        figpath = '/home/akumar/nse/neural_control/figs/final'
+        figpath = '/home/akumar/nse/neural_control/figs/loco'
 
     # Add data_path, T, n, bin_width to globals
     # Set these
@@ -525,32 +480,33 @@ if __name__ == '__main__':
     globals()['T'] =  T
     globals()['n'] = n
     globals()['bin_width'] = bin_width
+    globals()['region'] = 'S1'
 
     # Load dimreduc_df
-    with open('/home/akumar/nse/neural_control/data/indy_decoding_df2.dat', 'rb') as f:
+    with open('/home/akumar/nse/neural_control/data/loco_decoding_df.dat', 'rb') as f:
         dimreduc_df = pd.DataFrame(pickle.load(f))
-    # with open('/home/akumar/nse/neural_control/data/loco_decoding_norm.dat', 'rb') as f:
-    #     dimreduc_df = pd.DataFrame(pickle.load(f))
 
-
+    # S1
+    dimreduc_df = apply_df_filters(dimreduc_df, loader_args={'bin_width': 50, 'filter_fn': 'none', 'filter_kwargs': {}, 'boxcox': 0.5, 'spike_threshold': 100, 'region': 'S1'})
+    
     method1 = 'FCCA'
     method2 = 'PCA'
 
     # Get top neurons
     top_neurons_df = get_top_neurons(dimreduc_df, method1=method1, method2=method2, n=10, pairwise_exclude=True)
-    heatmap_plot(top_neurons_df, figpath)
+    # heatmap_plot(top_neurons_df, figpath)
     # Plot PSTH
-    # PSTH_plot(top_neurons_df, figpath)
+    PSTH_plot(top_neurons_df, figpath)
 
-    # PI = single_unit_PI(top_neurons_df)
+    PI = single_unit_PI(top_neurons_df)
 
     # Cross-covariance stuff
-    # cross_covs, cross_covs01 = cross_cov_calc(top_neurons_df)
-    # tau_max, mag, stats, p = cross_covs_statistics(cross_covs, cross_covs01)
-    # PI_stats, PI_p = PI_statistics(PI)
+    cross_covs, cross_covs01 = cross_cov_calc(top_neurons_df)
+    tau_max, mag, stats, p = cross_covs_statistics(cross_covs, cross_covs01)
+    PI_stats, PI_p = PI_statistics(PI)
     
-    # stats += PI_stats
-    # p += PI_p
+    stats += PI_stats
+    p += PI_p
 
-    # box_plots(method1, method2, tau_max, mag, PI, stats, p, figpath)
+    box_plots(method1, method2, tau_max, mag, PI, stats, p, figpath)
     

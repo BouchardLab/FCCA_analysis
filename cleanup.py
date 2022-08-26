@@ -8,12 +8,15 @@ import itertools
 import pdb
 from tqdm import tqdm
 import importlib
+from copy import deepcopy
 from sklearn.model_selection import KFold
 
 #from batch_analysis import comm_split, dca_main, decoding_per_dim
 from loaders import load_sabes, load_shenoy, load_peanut
 from utils import apply_df_filters
 # from schwimmbad import MPIPool, SerialPool
+
+from batch_cc_analysis import prune_tasks
 
 LOADER_DICT = {'sabes': load_sabes, 'shenoy': load_shenoy, 'peanut': load_peanut}
 
@@ -145,7 +148,7 @@ def cleanup_var(root_dir, job_name, dof_file):
 
 # Take subfolders of DCA results and properly
 # combine into single files
-def cleanup_dca(root_dir, job_name):
+def cleanup_dimreduc(root_dir, job_name, gen_sbatch=True):
 
     to_do = {}
 
@@ -206,6 +209,35 @@ def cleanup_dca(root_dir, job_name):
             with open(results_file, 'wb') as f:
                 pickle.dump(results_dict_list, f, protocol=-1)
 
+    if gen_sbatch:
+        # Read in the sbatch file, remove lines associated with to_do 0 entries, and adjust the total nodes requested
+        with open('/home/akumar/nse/neural_control/sbatch_resume.sh', 'r') as sbatch:
+            headers = []
+            header_segment = True
+            while header_segment:
+                ln = sbatch.readline()
+                if ln[0:4] == 'srun':
+                    header_segment = False
+                else:
+                    headers.append(ln)
+
+            srun_statements = [ln for ln in sbatch][0:-1]
+            nums = [int(ln.split('.dat')[0].split('arg')[1]) for ln in srun_statements]
+
+        num_nodes = int(srun_statements[0].split('-N ')[1].split(' -n')[0])
+        num_todo = len([_ for v in to_do.items() if len(v) > 0])
+        # Adjust the number of nodes
+        num_nodes_total = num_todo * num_nodes
+    
+        headers[4] = '#SBATCH -N %d\n' % num_nodes_total        
+
+        with open('sbatch_residual.sh', 'w') as sbatch:
+            for h in headers:
+                sbatch.write(h)
+            
+            for i, s in enumerate(srun_statements):
+                if to_do[nums[i]] != 0:
+                    sbatch.write(s)
     return to_do
 
 def cleanup_decoding(root_dir, job_name, complete=True, 
@@ -351,3 +383,28 @@ def cleanup_decoding(root_dir, job_name, complete=True,
             # # Send the data itself as well
             # tasks = [task + (X, T, results_folder) for task in tasks]
 '''
+
+def cleanup_cca(path):
+
+    argfiles = glob.glob('%s/arg*' % path)
+    to_do = []
+    for argfile in argfiles:
+        with open(argfile, 'rb') as f:
+            args = pickle.load(f)
+
+        results_file = args['results_file']
+
+        # create or append toa results file and progress file
+        results_file = results_file.split('/')
+        results_file[-1] = 'cca_' + results_file[-1]
+        progress_file = deepcopy(results_file)
+        progress_file[-1] = 'progress_' + progress_file[-1]
+
+        results_file = '/'.join(results_file)
+        progress_file = '/'.join(progress_file)
+
+        tasks = list(itertools.product(args['task_args']['task_args']['lags'], args['task_args']['task_args']['windows']))
+        tasks = prune_tasks(tasks, progress_file)
+        to_do.append(len(tasks))
+
+    return to_do

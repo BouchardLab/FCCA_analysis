@@ -1,4 +1,5 @@
 import pdb
+import random
 import string
 import os, sys
 import numpy as np
@@ -33,7 +34,7 @@ if __name__ == '__main__':
 
     repo_path = sys.argv[1]
     dpath = sys.argv[2]
-    didx = sys.argv[3]
+    didx = int(sys.argv[3])
     results_dir = sys.argv[4]
 
     sys.path.append(repo_path)
@@ -52,9 +53,9 @@ if __name__ == '__main__':
     dist_U = np.zeros(N_comparisons)
     scores = np.zeros(N_comparisons)
 
-    lqgmodel = LQGCA()
+    lqgmodel = LQGCA(T=4)
 
-    for i in range(N_comparisons):
+    for i in tqdm(range(N_comparisons)):
         V = scipy.stats.ortho_group.rvs(X.shape[1])[:, 0:6]
         x = X @ V
 
@@ -72,7 +73,7 @@ if __name__ == '__main__':
     # Saving. Push onto NERSC and test/parallelize
 
     # Generate a unique hash associated with htis file
-    hsh = "".join(np.random.choices(string.ascii_letters, k=26))
+    hsh = "".join(random.choices(string.ascii_letters, k=26))
     fname = 'didx_%d_%s' % (didx, hsh)
     with open('%s/%s.pkl' % (results_dir, fname), 'wb') as f:
         f.write(pickle.dumps(dist_U))

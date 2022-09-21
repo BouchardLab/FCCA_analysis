@@ -64,5 +64,37 @@ def consolidate_decoding(src_path, save_path):
         f.write(pickle.dumps(src_path))
 
 
-def consolidate_dimreduc():
-    pass
+def consolidate_dimreduc(src_path, save_path):
+    
+    argfiles = glob.glob('%s/arg*.dat' % src_path)
+    
+    result_list = []
+    for argfile in argfiles:
+
+        # Open up the arg files
+        with open(argfile, 'rb') as f:
+            args = pickle.load(f)
+
+        # rfile = args['results_file']
+        # with open(rfile, 'rb') as f:
+        #     result = pickle.load(f)
+
+        result = [{}]
+        for result_ in result:
+            for k, v in args.items():
+                if type(k) == dict:
+                    for k_, v_ in k.items():
+                        result_[k_] = v_
+                else:
+                    result_[k] = v
+
+        result_list.extend(result)
+
+    # For ease of use, use data file names that do not involve the directory path
+    for r in result_list:
+        r['data_file'] = r['data_file'].split('/')[-1]
+
+    # Save the result list, directory path
+    with open(save_path, 'wb') as f:
+        f.write(pickle.dumps(result_list))
+        f.write(pickle.dumps(src_path))

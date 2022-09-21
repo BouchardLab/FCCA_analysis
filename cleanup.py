@@ -225,7 +225,7 @@ def cleanup_dimreduc(root_dir, job_name, gen_sbatch=True):
             nums = [int(ln.split('.dat')[0].split('arg')[1]) for ln in srun_statements]
 
         num_nodes = int(srun_statements[0].split('-N ')[1].split(' -n')[0])
-        num_todo = len([_ for v in to_do.items() if len(v) > 0])
+        num_todo = len([v for v in to_do.items() if len(v) > 0])
         # Adjust the number of nodes
         num_nodes_total = num_todo * num_nodes
     

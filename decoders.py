@@ -331,9 +331,9 @@ def lr_decode_windowed(X, Z, lag, window, transition_times, train_idxs, test_idx
         Ztest = None
 
     # Standardize
-    #X = StandardScaler().fit_transform(X)
-    #Z = StandardScaler().fit_transform(Z)
-    decodingregressor = LinearRegression(normalize=True, fit_intercept=True)
+    # X = StandardScaler().fit_transform(X)
+    # Z = StandardScaler().fit_transform(Z)
+    decodingregressor = LinearRegression(fit_intercept=True)
 
     # Fit and score
     decodingregressor.fit(np.concatenate(Xtrain), np.concatenate(Ztrain))

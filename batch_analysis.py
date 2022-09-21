@@ -13,7 +13,7 @@ from sklearn.model_selection import KFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 
-#from pyuoi.linear_model.var import VAR
+from pyuoi.linear_model.var import VAR
 from dca.dca import DynamicalComponentsAnalysis as DCA
 from dca.cov_util import form_lag_matrix
 from dca_research.kca import KalmanComponentsAnalysis as KCA
@@ -83,6 +83,10 @@ DIMREDUC_DICT = {'PCA': PCA_wrapper, 'DCA': DCA, 'KCA': KCA, 'LQGCA': LQGCA}
 
 # Check which tasks have already been completed and prune from the task list
 def prune_dimreduc_tasks(tasks, results_folder):
+    # If the results file exists, there is nothing left to do
+    if os.path.exists('%s.dat' % results_folder):
+        return []
+
     completed_files = glob.glob('%s/*.dat' % results_folder)
     dim_and_folds = []
     for completed_file in completed_files:
@@ -687,12 +691,16 @@ def main(cmd_args, args):
                 return
 
         load_data(args['loader'], args['data_file'], args['loader_args'], comm)
+
         X = globals()['X']
-        split_idxs = list(KFold(5).split(X))
-        train_idxs, test_idxs = split_idxs[args['task_args']['fold_idx']]
+        if args['task_args']['fold_idx'] > 0:
+            split_idxs = list(KFold(5).split(X))
+            train_idxs, test_idxs = split_idxs[args['task_args']['fold_idx']]
+        else:
+            train_idxs = np.arange(X.shape[0])
         savepath = args['results_file'].split('.dat')[0]
 
-        # Pop off fold_idx from task_args
+        # Pop off fold_idx from task_args - the rest can be passed into the VAR object
         del args['task_args']['fold_idx']
 
         args['task_args']['savepath'] = savepath

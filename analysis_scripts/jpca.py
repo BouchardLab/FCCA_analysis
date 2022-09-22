@@ -10,6 +10,7 @@ import pandas as pd
 from tqdm import tqdm
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import r2_score
 
 from scipy.ndimage import gaussian_filter1d
 from mpl_toolkits.axisartist.axislines import AxesZero
@@ -63,14 +64,14 @@ if __name__ == '__main__':
         figpath = '/home/akumar/nse/neural_control/figs/final'
 
 
-    with open('/home/akumar/nse/neural_control/data/indy_decoding_df2.dat', 'rb') as f:
+    with open('/mnt/Secondary/data/postprocessed/indy_decoding_df2.dat', 'rb') as f:
         sabes_df = pickle.load(f)
     sabes_df = pd.DataFrame(sabes_df)
 
     data_files = np.unique(sabes_df['data_file'].values)
     dpath = '/mnt/Secondary/data/sabes'
 
-
+    DIM = 10
     if not os.path.exists('jpcaAtmp.dat'):
         # Now do subspace identification/VAR inference within these 
         # results = []
@@ -79,15 +80,17 @@ if __name__ == '__main__':
             dat = load_sabes('%s/%s' % (dpath, data_file))
             y = np.squeeze(dat['spike_rates'])
             for dimreduc_method in ['DCA', 'KCA', 'LQGCA', 'PCA']:
-                df_ = apply_df_filters(sabes_df, data_file=data_file, fold_idx=0, dim=6, dimreduc_method=dimreduc_method)
+                df_ = apply_df_filters(sabes_df, data_file=data_file, fold_idx=0, dim=DIM, dimreduc_method=dimreduc_method)
                 if dimreduc_method == 'LQGCA':
                     df_ = apply_df_filters(df_, dimreduc_args={'T': 3, 'loss_type': 'trace', 'n_init': 10})
                 V = df_.iloc[0]['coef']
                 if dimreduc_method == 'PCA':
-                    V = V[:, 0:6]        
+                    V = V[:, 0:DIM]        
 
                 # Project data
                 yproj = y @ V
+
+                # yproj = gaussian_filter1d(yproj, sigma=5)
 
                 result_ = {}
                 result_['data_file'] = data_file
@@ -100,15 +103,56 @@ if __name__ == '__main__':
                 # result_['ssid_A'] = A
 
                 # Fit VAR(1) and VAR(2)
-                varmodel = VAR(estimator='ols', order=1)
-                varmodel.fit(yproj)
-                result_['var1_A'] = form_companion(varmodel.coef_) 
+                # varmodel = VAR(estimator='ols', order=1)
+                # varmodel.fit(yproj)
+                # result_['var1_A'] = form_companion(varmodel.coef_) 
+                # result_['var1score'] = varmodel.score(yproj)
 
-                varmodel = VAR(estimator='ols', order=2)
-                varmodel.fit(yproj)
-                result_['var2_A'] = form_companion(varmodel.coef_)
+                # varmodel = VAR(estimator='ols', order=1, self_regress=True)
+                # varmodel.fit(yproj)
+                # result_['var1_A_sr'] = form_companion(varmodel.coef_) 
+                # result_['var1srscore'] = varmodel.score(yproj)
 
+
+                # varmodel = VAR(estimator='ols', order=2)
+                # varmodel.fit(yproj)
+                # result_['var2_A'] = form_companion(varmodel.coef_) 
+                # result_['var2score'] = varmodel.score(yproj)
+
+                # varmodel = VAR(estimator='ols', order=2, self_regress=True)
+                # varmodel.fit(yproj)
+                # result_['var2_A_sr'] = form_companion(varmodel.coef_) 
+                # result_['var2srscore'] = varmodel.score(yproj)
+
+                # varmodel = VAR(estimator='ols', order=3)
+                # varmodel.fit(yproj)
+                # result_['var3_A'] = form_companion(varmodel.coef_) 
+                # result_['var3score'] = varmodel.score(yproj)
+
+                # varmodel = VAR(estimator='ols', order=3, self_regress=True)
+                # varmodel.fit(yproj)
+                # result_['var3_A_sr'] = form_companion(varmodel.coef_) 
+                # result_['var3srscore'] = varmodel.score(yproj)
+
+
+                # x = np.array([StandardScaler().fit_transform(dat['spike_rates'][j, ...]) 
+                #             for j in range(dat['spike_rates'].shape[0])])
+                jpca = JPCA(n_components=DIM, mean_subtract=False)
+                jpca.fit(yproj[np.newaxis, ...])
+                
+                linmodel = LinearRegression()
+                linmodel.fit(yproj[:-1, :], np.diff(yproj, axis=0))
+
+                ypred = np.array([y @ jpca.M_skew for y in yproj]) 
+
+                r2_jpca = r2_score(yproj, ypred)
+                r2_linear = linmodel.score(yproj[:-1, :], np.diff(yproj, axis=0))
+
+                print('method: %s, r2_jpca: %f, r2_lin: %f' % (dimreduc_method, r2_jpca, r2_linear))
+                result_['jeig'] = jpca.eigen_vals_
                 resultsd3.append(result_)
+
+
         with open('jpcaAtmp.dat', 'wb') as f:
             f.write(pickle.dumps(resultsd3))            
     else:
@@ -117,21 +161,39 @@ if __name__ == '__main__':
 
     A_df = pd.DataFrame(resultsd3)
 
-    # Measure (1) largest amplification, (2) Angle between largest amplification vector and largest rotation vector, (3) 
     d_U = np.zeros((28, 4, 3))
+    maxim = np.zeros((28, 4, 2))
+
+    d1 = []
+    d2 = []
+
     for i in range(28):
         for j, dimreduc_method in enumerate(['DCA', 'KCA', 'LQGCA', 'PCA']):
             df_ = apply_df_filters(A_df, data_file=data_files[i], dimreduc_method=dimreduc_method)
             # A = df_.iloc[0]['ssid_A']
             # U, P = scipy.linalg.polar(A)
             # d_U[i, j, 0] = np.linalg.norm(A - U)/np.linalg.norm(A)
-            A = df_.iloc[0]['var1_A']
-            U, P = scipy.linalg.polar(A)
-            d_U[i, j, 1] = np.linalg.norm(A - U)/np.linalg.norm(A)
+            # A = df_.iloc[0]['var3_A_sr']
+            # U, P = scipy.linalg.polar(A)
+            # d_U[i, j, 1] = np.linalg.norm(A - U)/np.linalg.norm(A)
             #d_U[i, j, 1] = 1 - np.linalg.norm(U)/np.linalg.norm(A)
-            A = df_.iloc[0]['var2_A']
-            U, P = scipy.linalg.polar(A)
-            d_U[i, j, 2] = np.linalg.norm(A - U)/np.linalg.norm(A)
+            # A = df_.iloc[0]['var2_A']
+            # U, P = scipy.linalg.polar(A)
+            # d_U[i, j, 2] = np.linalg.norm(A - U)/np.linalg.norm(A)
+
+            eigs = df_.iloc[0]['jeig']
+            # eigsd = np.linalg.eigvals(A)
+
+            # if j == 2:
+            #     d1.append(np.linalg.det(U))
+            # if j == 3:
+            #     d2.append(np.linalg.det(U))
+
+            # maxim[i, j, 1] = np.sum(np.abs(np.imag(eigsd)))/2
+            maxim[i, j, 0] = np.sum(np.abs(eigs))/2
+
+    print(d1)
+    print(d2)
 
     # Next up:
     # Rotational trajectories.
@@ -278,16 +340,21 @@ if __name__ == '__main__':
     fig, ax = plt.subplots(1, 1, figsize=(5, 2))
 
     medianprops = dict(linewidth=0)
-    bplot = ax.boxplot([d_U[:, 2, 1], d_U[:, 3, 1]], patch_artist=True, medianprops=medianprops, notch=True, vert=False, showfliers=False)
+    #bplot = ax.boxplot([d_U[:, 2, 1], d_U[:, 3, 1]], patch_artist=True, medianprops=medianprops, notch=True, vert=False, showfliers=False)
+    bplot = ax.boxplot([maxim[:, 2, 0], maxim[:, 3, 0]], patch_artist=True, medianprops=medianprops, notch=True, vert=False, showfliers=False)
 
-    _, p = scipy.stats.wilcoxon(d_U[:, 2, 1], d_U[:, 3, 1])
+    # _, p = scipy.stats.wilcoxon(d_U[:, 2, 1], d_U[:, 3, 1])
+    _, p = scipy.stats.wilcoxon(maxim[:, 2, 0], maxim[:, 3, 0])
+    print('p:%f' % p)
 
     method1 = 'FCCA'
     method2 = 'PCA'
+ 
     ax.set_yticklabels([method1, method2], fontsize=14)
     ax.tick_params(axis='y', labelsize=12)
-    ax.set_xlabel('Normalized Distance to Rotational Dynamics', fontsize=14)
+    ax.set_xlabel('Sum of Imaginary Eigenvalues (a.u.)', fontsize=14)
     ax.invert_xaxis()
+ 
     # fill with colors
     colors = ['red', 'black']
     for patch, color in zip(bplot['boxes'], colors):
@@ -297,4 +364,4 @@ if __name__ == '__main__':
     # ax.set_xlim([13, 0])
 
     fig.tight_layout()
-    fig.savefig('%s/Dist_to_U.pdf' % figpath, bbox_inches='tight', pad_inches=0)
+    fig.savefig('%s/jpca_eig_bplot.pdf' % figpath, bbox_inches='tight', pad_inches=0)

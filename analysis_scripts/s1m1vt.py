@@ -9,7 +9,7 @@ import glob
 import pickle
 import pandas as pd
 from tqdm import tqdm
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LinearRegression, RidgeCV
 from sklearn.preprocessing import StandardScaler
 
 import itertools
@@ -53,17 +53,35 @@ start_times = {'indy_20160426_01': 0,
                'indy_20170131_02': 0,
                }
 
+# Loco files with decent decoding + indy session with S1 recording
+fls = ['loco_20170210_03.mat',
+ 'loco_20170213_02.mat',
+ 'loco_20170215_02.mat',
+ 'loco_20170227_04.mat',
+ 'loco_20170228_02.mat',
+ 'loco_20170301_05.mat',
+ 'loco_20170302_02.mat',
+ 'indy_20160426_01.mat']
+
+fls_ = ['loco_20170210_03.pkl',
+ 'loco_20170213_02.pkl',
+ 'loco_20170215_02.pkl',
+ 'loco_20170227_04.pkl',
+ 'loco_20170228_02.pkl',
+ 'loco_20170301_05.pkl',
+ 'loco_20170302_02.pkl',
+ 'indy_20160426_01.pkl']
+
+
 def gen_run():
     name = '/home/akumar/nse/neural_control/analysis_scripts/run.sh'
-    didxs = np.array([0, 1])
-    lidxs = np.array([0, 1, 2, 3])
+    didxs = np.arange(8)
 
-    combs = itertools.product(didxs, lidxs)
     with open(name, 'w') as rsh:
         rsh.write('#!/bin/bash\n')
-        for (di, li) in combs:
-            rsh.write('mpirun -n 8 python s1m1vt.py %d %d %d --error_thresh=%.2f --error_op=%s --q=%.2f --filter_op=%s\n'
-                    % (di, li, 0, 1, 'le', 0, 'le'))
+        for di in didx:
+            rsh.write('mpirun -n 8 python s1m1vt.py %d %d --error_thresh=%.2f --error_op=%s --q=%.2f --filter_op=%s\n'
+                    % (di, 0, 1, 'le', 0, 'le'))
 
 # Filter reaches by:
 # 0: Nothing
@@ -171,7 +189,6 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('didx', type=int)
-    parser.add_argument('lidx', type=int)
     parser.add_argument('reach_filter', type=int, default=0)
     parser.add_argument('--error_thresh', type=float, default=1.)
     parser.add_argument('--error_op', default='le')
@@ -180,10 +197,10 @@ if __name__ == '__main__':
 
     cmd_args = parser.parse_args()    
     didx = cmd_args.didx
-    lidx = cmd_args.lidx
     comm = MPI.COMM_WORLD
 
     #dimvals = np.array([2, 6, 10, 15])
+    ccadimval = 6
     # Fix dimension to 6
     dimval = 6
     measure_from_end=False
@@ -191,87 +208,63 @@ if __name__ == '__main__':
     # Sliding windows
     window_width = 10
     #window_centers = np.linspace(0, 35, 25)[0:9]
-    window_centers = np.arange(12)
+    window_centers = np.arange(20)
     windows = [(int(wc - window_width//2), int(wc + window_width//2)) for wc in window_centers]
-
-    # Select the indy data file that has both M1/S1 and one loco datafile that seems to give decent decoding performance
-    data_files = ['/mnt/Secondary/data/sabes/indy_20160426_01.mat', '/mnt/Secondary/data/sabes/loco_20170227_04.mat']
 
     if comm.rank == 0:
 
-        # Form reference dataframe
-        argfiles = glob.glob('/mnt/Secondary/data/timescale_dimreduc/arg*dat')
-        rl = []
-        for argfile in argfiles:
-            with open(argfile, 'rb') as f:
-                args = pickle.load(f)
-            argno = argfile.split('arg')[1].split('.dat')[0]
-            r = {}
-            r['rf'] = args['results_file']
-            r['data_file'] = args['data_file']
-            r['didx'] = int(args['data_file'].split('didx_')[1].split('_')[0])
-            r['dr_method'] = args['task_args']['dimreduc_method']
-            r['dr_args'] = args['task_args']['dimreduc_args']
-            rl.append(r)
+        # CCA fit on all data files, 50 ms
+        with open('/mnt/Secondary/data/postprocessed/sabes_cca50cv_df.dat', 'rb') as f:
+            ccadf = pickle.load(f)
+        if 'indy' in fls[didx]:
+            with open('/mnt/Secondary/data/postprocessed/indy_decoding_df2.dat', 'rb') as f:
+                sabes_df = pickle.load(f)
 
-        ref_df = pd.DataFrame(rl)
+            sabes_df = pd.DataFrame(sabes_df)
 
-        with open('/mnt/Secondary/data/postprocessed/cca_timescales_df.pkl', 'rb') as f:
-            cca_df = pickle.load(f)
+            dffca = apply_df_filters(sabes_df, data_file=fls[didx], dim=dimval, dimreduc_method='LQGCA')
 
-        # Filter by the desired preprocesing parmaeters, and then have 2 sets of indices, one that
-        # selects that data file, and another that selects the 
-        ccavalid1 = apply_df_filters(cca_df, didx=didx, bin_width=25,
-                                    win=1, lag=0, filter_fn='gaussian', filter_kwargs={'sigma':3})
-        ccavalid2 = apply_df_filters(cca_df, didx=didx, bin_width=10,
-                                    win=1, lag=0, filter_fn='gaussian', filter_kwargs={'sigma':3})
-        ccavalid3 = apply_df_filters(cca_df, didx=didx, bin_width=25,
-                                     win=1, lag=0, filter_fn='none')
-        ccavalid4 = apply_df_filters(cca_df, didx=didx, bin_width=50,
-                                     win=1, lag=0, filter_fn='none')
+            dfpca = apply_df_filters(sabes_df, data_file=fls[didx], dim=dimval, dimreduc_method='PCA')
 
-        if lidx == 0:
-            ccadf = ccavalid1
-        elif lidx == 1:
-            ccadf = ccavalid2
-        elif lidx == 2:
-            ccadf = ccavalid3
-        elif lidx == 3:
-            ccadf = ccavalid4
+        elif 'loco' in fls[didx]:
+            with open('/mnt/Secondary/data/postprocessed/loco_decoding_df.dat', 'rb') as f:
+                sabes_df = pickle.load(f)
 
-        coefcca = ccadf.iloc[0]['ccamodel'].y_weights_
+            sabes_df = pd.DataFrame(sabes_df)
 
-        dffca = apply_df_filters(ref_df, data_file=ccadf.iloc[0]['fl'], dr_method='LQGCA', dr_args={'T':3, 'loss_type':'trace', 'n_init':10})
-        dfpca = apply_df_filters(ref_df, data_file=ccadf.iloc[0]['fl'], dr_method='PCA')
+            dffca = apply_df_filters(sabes_df, data_file=fls[didx], dim=dimval, dimreduc_method='LQGCA', 
+                                    dimreduc_args={'T':3, 'loss_type':'trace', 'n_init':10},
+                                    loader_args={'bin_width': 50, 'filter_fn': 'none', 'filter_kwargs': {}, 'boxcox': 0.5, 'spike_threshold': 100, 'region': 'M1'},
+                                    decoder_args={'trainlag': 4, 'testlag': 4, 'decoding_window': 5})
 
-        assert(dffca.shape[0] == 1)
-        assert(dfpca.shape[0] == 1)
+            dfpca = apply_df_filters(sabes_df, data_file=fls[didx], dim=dimval, dimreduc_method='PCA',
+                                    loader_args={'bin_width': 50, 'filter_fn': 'none', 'filter_kwargs': {}, 'boxcox': 0.5, 'spike_threshold': 100, 'region': 'M1'},
+                                    decoder_args={'trainlag': 4, 'testlag': 4, 'decoding_window': 5})
 
-        with open(dffca.iloc[0]['rf'], 'rb') as f:
-            results = pickle.load(f)
 
-        dffcca = pd.DataFrame(results)
+        # Only use valid files
+        ccadf = apply_df_filters(ccadf, fl=fls_[didx], lag=0, win=1)
 
-        dffcca = apply_df_filters(dffcca, dim=dimval, fold_idx=0)
-        coeffcca = dffcca.iloc[0]['coef']
 
-        with open(dfpca.iloc[0]['rf'], 'rb') as f:
-            results = pickle.load(f)
-
-        dfpca = pd.DataFrame(results)
-        dfpca = apply_df_filters(dfpca, dim=dimval, fold_idx=0)
-        coefpca = dfpca.iloc[0]['coef']
+        # Will later need to be cross-validated
+        assert(ccadf.shape[0] == 5)
+        assert(dffca.shape[0] == 5)
+        assert(dfpca.shape[0] == 5)
+        
+        coefcca = [apply_df_filters(ccadf, fold_idx=k).iloc[0]['ccamodel'].y_weights_[:, 0:ccadimval] for k in range(5)]
+        coefpca = [apply_df_filters(dfpca, fold_idx=k).iloc[0]['coef'][:, 0:dimval] for k in range(5)]
+        coeffcca = [apply_df_filters(dffca, fold_idx=k).iloc[0]['coef'][:, 0:dimval] for k in range(5)]
 
         # dat = load_sabes('/mnt/Secondary/data/sabes/%s' % data_file)
-        dat = load_sabes(data_files[didx], bin_width=cca_df.iloc[0]['bin_width'], filter_fn=cca_df.iloc[0]['filter_fn'], 
-                         filter_kwargs=cca_df.iloc[0]['filter_kwargs'], region='S1')
-        data_file = data_files[didx].split('/')[-1].split('.mat')[0]
+        dat = load_sabes('/mnt/Secondary/data/sabes/%s' % fls[didx], bin_width=ccadf.iloc[0]['bin_width'], filter_fn=ccadf.iloc[0]['filter_fn'], 
+                         filter_kwargs=ccadf.iloc[0]['filter_kwargs'], region='S1')
+        data_file = fls[didx].split('/')[-1].split('.mat')[0]
         # dat = load_sabes('/mnt/sdb1/nc_data/sabes/%s' % data_file)
         dat = reach_segment_sabes(dat, data_file=data_file)
         X = np.squeeze(dat['spike_rates'])
         
-        dat = load_sabes(data_files[didx], bin_width=cca_df.iloc[0]['bin_width'], filter_fn=cca_df.iloc[0]['filter_fn'], 
-                         filter_kwargs=cca_df.iloc[0]['filter_kwargs'], region='M1')
+        dat = load_sabes('/mnt/Secondary/data/sabes/%s' % fls[didx], bin_width=ccadf.iloc[0]['bin_width'], filter_fn=ccadf.iloc[0]['filter_fn'], 
+                         filter_kwargs=ccadf.iloc[0]['filter_kwargs'], region='M1')
         # dat = load_sabes('/mnt/sdb1/nc_data/sabes/%s' % data_file)
         dat = reach_segment_sabes(dat, data_file=data_file)
         Y = np.squeeze(dat['spike_rates'])
@@ -321,15 +314,11 @@ if __name__ == '__main__':
 
     # Distribute windows across ranks
     windows = np.array_split(windows, comm.size)[comm.rank]
-    wr2 = np.zeros((len(windows), 1, 8))
-    ypca = Y @ coefpca
-    yfcca = Y @ coeffcca
-    ycca = Y @ coefcca
-    # Apply projection
+    wr2 = np.zeros((len(windows), 5, 10))
 
     # Cross-validate the prediction
     for j, window in enumerate(windows):
-        for fold, (train_idxs, test_idxs) in enumerate([list(KFold(n_splits=5).split(Y))[0]]): 
+        for fold, (train_idxs, test_idxs) in enumerate(KFold(n_splits=5).split(Y)): 
             # We have been given a list of windows for each transition
             if len(window) > 2:
                 W = [w for win in window for w in win]
@@ -339,6 +328,11 @@ if __name__ == '__main__':
 
             if win_min >= 0:
                 win_min = 0
+
+            ypca = Y @ coefpca[fold]
+            yfcca = Y @ coeffcca[fold]
+            ycca = Y @ coefcca[fold]
+            # Apply projection
 
             tt_train = [t for t in transition_times 
                         if t[0] >= min(train_idxs) and t[1] <= max(train_idxs) and t[0] > (lag + np.abs(win_min)) and t[1] < (X.shape[0] - lag - np.abs(win_min))]
@@ -352,8 +346,8 @@ if __name__ == '__main__':
             xxtest, yytest = apply_window(X, ypca, lag, window, tt_test, decoding_window, measure_from_end=measure_from_end,
                                         include_velocity=False, include_acc=False)
 
-            regressor = LinearRegression().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
-                                               StandardScaler().fit_transform(np.concatenate(yytrain)))
+            regressor = RidgeCV().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
+                                      StandardScaler().fit_transform(np.concatenate(yytrain)))
 
             r2train = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtrain)),
                                     StandardScaler().fit_transform(np.concatenate(yytrain)))
@@ -363,14 +357,13 @@ if __name__ == '__main__':
             wr2[j, fold, 0] = r2train
             wr2[j, fold, 1] = r2test
 
-
             xxtrain, yytrain = apply_window(X, yfcca, lag, window, tt_train, decoding_window, measure_from_end=measure_from_end,
                                         include_velocity=False, include_acc=False)
             xxtest, yytest = apply_window(X, yfcca, lag, window, tt_test, decoding_window, measure_from_end=measure_from_end,
                                         include_velocity=False, include_acc=False)
 
-            regressor = LinearRegression().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
-                                        StandardScaler().fit_transform(np.concatenate(yytrain)))
+            regressor = RidgeCV().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
+                                      StandardScaler().fit_transform(np.concatenate(yytrain)))
 
             r2train = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtrain)),
                                     StandardScaler().fit_transform(np.concatenate(yytrain)))
@@ -385,8 +378,8 @@ if __name__ == '__main__':
             xxtest, yytest = apply_window(ycca, ypca, lag, window, tt_test, decoding_window, measure_from_end=measure_from_end,
                                         include_velocity=False, include_acc=False)
 
-            regressor = LinearRegression().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
-                                               StandardScaler().fit_transform(np.concatenate(yytrain)))
+            regressor = RidgeCV().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
+                                      StandardScaler().fit_transform(np.concatenate(yytrain)))
 
             r2train = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtrain)),
                                     StandardScaler().fit_transform(np.concatenate(yytrain)))
@@ -402,8 +395,8 @@ if __name__ == '__main__':
             xxtest, yytest = apply_window(ycca, yfcca, lag, window, tt_test, decoding_window, measure_from_end=measure_from_end,
                                         include_velocity=False, include_acc=False)
 
-            regressor = LinearRegression().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
-                                               StandardScaler().fit_transform(np.concatenate(yytrain)))
+            regressor = RidgeCV().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
+                                      StandardScaler().fit_transform(np.concatenate(yytrain)))
 
             r2train = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtrain)),
                                     StandardScaler().fit_transform(np.concatenate(yytrain)))
@@ -413,10 +406,26 @@ if __name__ == '__main__':
             wr2[j, fold, 6] = r2train
             wr2[j, fold, 7] = r2test
 
+            xxtrain, yytrain = apply_window(X, ycca[:, 0][:, np.newaxis], lag, window, tt_train, decoding_window, measure_from_end=measure_from_end,
+                                        include_velocity=False, include_acc=False)
+            xxtest, yytest = apply_window(X, ycca[:, 0][:, np.newaxis], lag, window, tt_test, decoding_window, measure_from_end=measure_from_end,
+                                        include_velocity=False, include_acc=False)
+
+            regressor = RidgeCV().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
+                                      StandardScaler().fit_transform(np.concatenate(yytrain)))
+
+            r2train = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtrain)),
+                                    StandardScaler().fit_transform(np.concatenate(yytrain)))
+            r2test = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtest)),
+                                    StandardScaler().fit_transform(np.concatenate(yytest)))
+
+            wr2[j, fold, 8] = r2train
+            wr2[j, fold, 9] = r2test
+
     windows = np.array(windows)
     dpath = '/home/akumar/nse/neural_control/data/s1m1regvt'
     #dpath = '/mnt/sdb1/nc_data/decodingvt'
-    with open('%s/didx%d_lidx%d_rank%d_%s_%d.dat' % (dpath, didx, lidx, comm.rank, filter_string, measure_from_end), 'wb') as f:
+    with open('%s/didx%d_rank%d_%s_%d.dat' % (dpath, didx, comm.rank, filter_string, measure_from_end), 'wb') as f:
         f.write(pickle.dumps(wr2))
         f.write(pickle.dumps(error_filter))
         f.write(pickle.dumps(reach_filter))

@@ -64,7 +64,7 @@ def get_scalar(df_, stat, neu_idx):
     elif stat == 'encoding_weights':
         decoding_win = df_.iloc[0]['decoder_params']['decoding_window']
         c =  calc_loadings(df_.iloc[0]['encoding_weights'], d=decoding_win)[neu_idx]        
-    elif stat in ['su_r2_pos', 'su_r2_vel', 'su_r2_enc', 'su_var', 'su_mmse', 'su_pi', 'su_fcca']:
+    elif stat in ['su_r2_pos', 'su_r2_vel', 'su_r2_enc', 'su_var', 'su_act']:
         c = df_.iloc[0][stat][neu_idx]  
     elif stat == 'orientation_tuning':
         c = np.zeros(8)
@@ -78,48 +78,53 @@ def get_scalar(df_, stat, neu_idx):
 if __name__ == '__main__':
 
     # # Which plots should we make and save?
-    make_scatter = True
-    make_psth = True
+    make_scatter = False
+    make_psth = False
     make_hist = True
-    # cascade = False
-    # if len(sys.argv) > 1:
-    #     if len(sys.argv) >= 2:
-    #         make_scatter = bool(sys.argv[1])
-    #     if len(sys.argv) >= 3:
-    #         make_psth = bool(sys.argv[2])
-    #     if len(sys.argv) >= 4:
-    #         make_hist = bool(sys.argv[3])    
-    #     if len(sys.argv) >= 5:
-    #         cascade = bool(sys.argv[4])
 
     # Where to save?
     if len(sys.argv) > 1:
         figpath = sys.argv[1]
     else:
-        figpath = '/home/akumar/nse/neural_control/figs/final'
+        figpath = '/home/akumar/nse/neural_control/figs/loco_indy_merge'
 
     #dframe = '/home/akumar/nse/neural_control/data/indy_decoding_marginal.dat'
-    dframe = '/mnt/Secondary/data/postprocessed/indy_decoding_df2.dat'
-    print('Using dframe %s' % dframe)
+    dframe_indy = '/mnt/Secondary/data/postprocessed/indy_decoding_df2.dat'
+    dframe_loco = '/mnt/Secondary/data/postprocessed/loco_decoding_df.dat'
 
-    with open(dframe, 'rb') as f:
-        sabes_df = pickle.load(f)
-    # with open('/home/akumar/nse/neural_control/data/sabes_decoding_df.dat', 'rb') as f:
-    #     sabes_df = pickle.load(f)
+    print('Using dframes %s, %s' % (dframe_indy, dframe_loco))
 
-    sabes_df = pd.DataFrame(sabes_df)
+    with open(dframe_indy, 'rb') as f:
+        rl = pickle.load(f)
+    indy_df = pd.DataFrame(rl)
+
+    with open(dframe_loco, 'rb') as f:
+        loco_df = pickle.load(f)
+    loco_df = pd.DataFrame(loco_df)
+    loco_df = apply_df_filters(loco_df,
+                            loader_args={'bin_width': 50, 'filter_fn': 'none', 'filter_kwargs': {}, 'boxcox': 0.5, 'spike_threshold': 100, 'region': 'M1'},
+                            decoder_args={'trainlag': 4, 'testlag': 4, 'decoding_window': 5})
+    good_loco_files = ['loco_20170210_03.mat',
+    'loco_20170213_02.mat',
+    'loco_20170215_02.mat',
+    'loco_20170227_04.mat',
+    'loco_20170228_02.mat',
+    'loco_20170301_05.mat',
+    'loco_20170302_02.mat']
+
+    loco_df = apply_df_filters(loco_df, data_file=good_loco_files)        
 
     DIM = 6
 
     # Try the raw leverage scores instead
     loadings_l = []
-    data_files = np.unique(sabes_df['data_file'].values)
-    for i, data_file in tqdm(enumerate(data_files)):
+    indy_data_files = np.unique(indy_df['data_file'].values)
+    for i, data_file in tqdm(enumerate(indy_data_files)):
         loadings = []
         for dimreduc_method in ['LQGCA', 'PCA']:
             loadings_fold = []
             for fold_idx in range(5):  
-                df_ = apply_df_filters(sabes_df, data_file=data_file, fold_idx=fold_idx, dim=DIM, dimreduc_method=dimreduc_method)
+                df_ = apply_df_filters(indy_df, data_file=data_file, fold_idx=fold_idx, dim=DIM, dimreduc_method=dimreduc_method)
                 if dimreduc_method == 'LQGCA':
                     df_ = apply_df_filters(df_, dimreduc_args={'T': 3, 'loss_type': 'trace', 'n_init': 10})
                 V = df_.iloc[0]['coef']
@@ -140,7 +145,37 @@ if __name__ == '__main__':
             d_['nidx'] = j
             loadings_l.append(d_)                
 
+    loco_data_files = np.unique(loco_df['data_file'].values)
+    for i, data_file in tqdm(enumerate(loco_data_files)):
+        loadings = []
+        for dimreduc_method in ['LQGCA', 'PCA']:
+            loadings_fold = []
+            for fold_idx in range(5):  
+                df_ = apply_df_filters(loco_df, data_file=data_file, fold_idx=fold_idx, dim=DIM, dimreduc_method=dimreduc_method)
+                if dimreduc_method == 'LQGCA':
+                    df_ = apply_df_filters(df_, dimreduc_args={'T': 3, 'loss_type': 'trace', 'n_init': 10})
+                assert(df_.shape[0] == 1)
+                V = df_.iloc[0]['coef']
+                if dimreduc_method == 'PCA':
+                    V = V[:, 0:DIM]        
+                loadings_fold.append(calc_loadings(V))
+
+            # Average loadings across folds
+            loadings.append(np.mean(np.array(loadings_fold), axis=0))
+
+        for j in range(loadings[0].size):
+            d_ = {}
+            d_['data_file'] = data_file
+            d_['FCCA_loadings'] = loadings[0][j]
+            d_['PCA_loadings'] = loadings[1][j]
+            # d_['DCA_loadings'] = loadings[2][j]
+            d_['nidx'] = j
+            loadings_l.append(d_)                
+
     loadings_df = pd.DataFrame(loadings_l)
+
+    # Combine list of data files into 1
+    data_files = np.concatenate([indy_data_files, loco_data_files])
 
     # For each data file, find the top 5 neurons that are high in one method but low in all others
     top_neurons_l = []
@@ -209,7 +244,7 @@ if __name__ == '__main__':
         #x1 = x1[x1 > np.quantile(x1, 0.05)]
         #x2 = x2[x2 > np.quantile(x2, 0.05)]
 
-        ax.scatter(np.log10(x1), np.log10(x2), alpha=0.2, color='#753530', s=20)
+        ax.scatter(np.log10(x1), np.log10(x2), alpha=0.25, color='#753530', s=15)
 
         for i in range(len(top_neurons_l)):
             idxs1 = top_neurons_l[i]['top_neurons'][0, :]
@@ -221,7 +256,7 @@ if __name__ == '__main__':
                 assert(d.shape[0] == 1)
                 x.append(d.iloc[0]['FCCA_loadings'])
                 y.append(d.iloc[0]['PCA_loadings'])
-            ax.scatter(np.log10(x), np.log10(y), color='r', alpha=0.25, edgecolors='k', s=25)
+            ax.scatter(np.log10(x), np.log10(y), color=(1, 0, 0, 0.5), edgecolors=(0, 0, 0, 0.5), s=15)
 
             x = []
             y = []
@@ -230,7 +265,7 @@ if __name__ == '__main__':
                 assert(d.shape[0] == 1)
                 x.append(d.iloc[0]['FCCA_loadings'])
                 y.append(d.iloc[0]['PCA_loadings'])
-            ax.scatter(np.log10(x), np.log10(y), color='k', alpha=0.25, edgecolors='k', s=25)
+            ax.scatter(np.log10(x), np.log10(y), color=(0, 0, 0, 0.2), edgecolors=(0, 0, 0, 0.5), s=15)
 
         ax.set_xlim([-5, 0.1])
         ax.set_ylim([-5, 0.1])
@@ -250,7 +285,6 @@ if __name__ == '__main__':
         ax.annotate('Spearman r=%.2f' % r, (-4.8, -4.5), fontsize=14)
         # ax.annotate('Upper-quartile r=%.2f' % r2, (-4.8, -0.5), fontsize=14)
         fig.savefig('%s/FCAPCAscatter.pdf' % figpath, bbox_inches='tight', pad_inches=0)
-
 
     # Next: single neuron traces
 
@@ -353,7 +387,7 @@ if __name__ == '__main__':
     #############################################################################
     if make_hist:
 
-        with open('/mnt/Secondary/data/postprocessed/sabes_su_df_dw5.dat', 'rb') as f:
+        with open('/mnt/Secondary/data/postprocessed/sabes_su_calcs.dat', 'rb') as f:
             sabes_su_l = pickle.load(f)
 
         sabes_su_df = pd.DataFrame(sabes_su_l)
@@ -363,7 +397,7 @@ if __name__ == '__main__':
         data_files = np.unique(itrim_df['data_file'].values)
 
         # Collect the desired single unit statistics into an array with the same ordering as those present in the loadings df
-        stats = ['decoding_weights', 'su_r2_enc', 'su_var', 'su_pi']
+        stats = ['decoding_weights', 'su_r2_enc', 'su_var', 'su_act']
 
         carray = []
         for i, data_file in enumerate(data_files):
@@ -404,48 +438,6 @@ if __name__ == '__main__':
                         su_r[i, j, k] = scipy.stats.spearmanr(x1[intersct], x2[intersct])[0]
                     else:
                         su_r[i, j, k] = 0
-
-        # Kludge prior to redwood talk: Replace the 
-        su_r[:, 0, -1] = [0.6098980878095178, 0.5648520359552638, 0.4972560199677716, 0.608098269250508, 0.6241999448846847, 0.37209187373017233,
-                        0.3140160015950173, 0.3415943112753217,
-                        0.398207829566688,  0.36162340932480197,
- 0.3843509456826915,  0.36673531045387,
- 0.3452000710403683,  0.4331142566316324,
- 0.369644987713759,  0.41840688709281565,
- 0.5141011114446244,  0.3445162383683936,
- 0.4190097552187958,  0.3878713088358275,
- 0.5389995987517391,  0.3720727071218162,
- 0.44945825159048525,  0.5189694484349963,
- 0.45778177250387087,  0.4132967251585099,
- 0.46979343457397865,  0.48105608926482935] 
-        su_r[:, 1, -1] = [0.3144441586555715,
-                0.36373380295965924,
-             0.5673886430250378,
- 0.48095369477678773,
- 0.5631847610655841,
- 0.6151291883167129,
- 0.6510107617137187,
- 0.5850678473778775,
- 0.5663879929214111,
- 0.5897558576423148,
- 0.6147500996908235,
- 0.6008112590414323,
- 0.6225504148269969,
- 0.6456069625622834,
- 0.6559060229190038,
- 0.6887440694192627,
- 0.6011408097390502,
- 0.6972025983650348,
- 0.667706854737299,
- 0.5676426658904181,
- 0.6713168530866115,
- 0.7285117134885308,
- 0.6165501397822117,
- 0.5817828307513697,
- 0.7365279267443712,
- 0.5367469023014304,
- 0.5881804734797166,
- 0.6468912868312361]
 
         fig, ax = plt.subplots(figsize=(5, 5),)
 

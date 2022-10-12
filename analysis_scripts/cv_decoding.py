@@ -105,12 +105,11 @@ def plot():
 
 
     # Open and consolidate dimreduc
-    with open('/home/akumar/nse/neural_control/data/cv_dimreduc_df.dat', 'rb') as f:
+    with open('/mnt/Secondary/data/postprocessed/cv_dimreduc_df.dat', 'rb') as f:
         cv_df = pickle.load(f)
 
     cv_df = pd.DataFrame(cv_df)
     data_files = np.unique(cv_df['data_file'].values)
-
 
     # Open and consolidate decoding
     decoding_files = glob.glob('decoding_list2_*')
@@ -162,8 +161,6 @@ def plot():
     accuracy_dca = np.load('/home/akumar/nse/neural_control/data/pca_dca_cv.npz')    
     accuracy_pca = accuracy_dca['accuracy'][0, :, :, 1]
 
-    pdb.set_trace()
-
     yvals = r2_pca[0]
     mean = yvals.mean(axis=1)
     std = yvals.std(axis=1)
@@ -204,8 +201,8 @@ def plot():
     ax[1].legend(fontsize=12)
     ax[1].set_title(data_files[1])
 
-    fig.tight_layout()
-    fig.savefig('/home/akumar/nse/neural_control/figs/final/cv_decoding.pdf', bbox_inches='tight', pad_inches=0)
+    # fig.tight_layout()
+    fig.savefig('/home/akumar/nse/neural_control/figs/loco_indy_merge/cv_decoding.pdf', bbox_inches='tight', pad_inches=0)
     #plt.savefig('pca_dca_cv.pdf', dpi=300)    
 
 

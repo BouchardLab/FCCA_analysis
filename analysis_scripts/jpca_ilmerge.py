@@ -61,28 +61,48 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         figpath = sys.argv[1]
     else:
-        figpath = '/home/akumar/nse/neural_control/figs/final'
+        figpath = '/home/akumar/nse/neural_control/figs/loco_indy_merge'
 
 
     with open('/mnt/Secondary/data/postprocessed/indy_decoding_df2.dat', 'rb') as f:
-        sabes_df = pickle.load(f)
-    sabes_df = pd.DataFrame(sabes_df)
+        indy_df = pickle.load(f)
+    indy_df = pd.DataFrame(indy_df)
+
+    with open('/mnt/Secondary/data/postprocessed/loco_decoding_df.dat', 'rb') as f:
+        loco_df = pickle.load(f)
+    loco_df = pd.DataFrame(loco_df)
+    loco_df = apply_df_filters(loco_df,
+                            loader_args={'bin_width': 50, 'filter_fn': 'none', 'filter_kwargs': {}, 'boxcox': 0.5, 'spike_threshold': 100, 'region': 'M1'},
+                            decoder_args={'trainlag': 4, 'testlag': 4, 'decoding_window': 5})
+    good_loco_files = ['loco_20170210_03.mat',
+    'loco_20170213_02.mat',
+    'loco_20170215_02.mat',
+    'loco_20170227_04.mat',
+    'loco_20170228_02.mat',
+    'loco_20170301_05.mat',
+    'loco_20170302_02.mat']
+
+    loco_df = apply_df_filters(loco_df, data_file=good_loco_files)        
+
+    sabes_df = pd.concat([loco_df, indy_df])
 
     data_files = np.unique(sabes_df['data_file'].values)
     dpath = '/mnt/Secondary/data/sabes'
 
     DIM = 6
-    if not os.path.exists('jpcaAtmp.dat'):
+    if not os.path.exists('jpcaAtmp_il.dat'):
         # Now do subspace identification/VAR inference within these 
         # results = []
         resultsd3 = []
         for i, data_file in tqdm(enumerate(data_files)):
             dat = load_sabes('%s/%s' % (dpath, data_file))
             y = np.squeeze(dat['spike_rates'])
-            for dimreduc_method in ['DCA', 'KCA', 'LQGCA', 'PCA']:
+            for dimreduc_method in ['LQGCA', 'PCA']:
                 df_ = apply_df_filters(sabes_df, data_file=data_file, fold_idx=0, dim=DIM, dimreduc_method=dimreduc_method)
                 if dimreduc_method == 'LQGCA':
                     df_ = apply_df_filters(df_, dimreduc_args={'T': 3, 'loss_type': 'trace', 'n_init': 10})
+
+                assert(df_.shape[0] == 1)
                 V = df_.iloc[0]['coef']
                 if dimreduc_method == 'PCA':
                     V = V[:, 0:DIM]        
@@ -138,7 +158,6 @@ if __name__ == '__main__':
                 # x = np.array([StandardScaler().fit_transform(dat['spike_rates'][j, ...]) 
                 #             for j in range(dat['spike_rates'].shape[0])])
                 yproj = StandardScaler().fit_transform(yproj)
-
                 jpca = JPCA(n_components=DIM, mean_subtract=False)
                 jpca.fit(yproj[np.newaxis, ...])
                 
@@ -153,22 +172,22 @@ if __name__ == '__main__':
                 resultsd3.append(result_)
 
 
-        with open('jpcaAtmp.dat', 'wb') as f:
+        with open('jpcaAtmp_il.dat', 'wb') as f:
             f.write(pickle.dumps(resultsd3))            
     else:
-        with open('jpcaAtmp.dat', 'rb') as f:
+        with open('jpcaAtmp_il.dat', 'rb') as f:
             resultsd3 = pickle.load(f)
 
     A_df = pd.DataFrame(resultsd3)
 
-    d_U = np.zeros((28, 4, 3))
-    maxim = np.zeros((28, 4, 2))
+    d_U = np.zeros((len(data_files), 2, 3))
+    maxim = np.zeros((len(data_files), 2, 2))
 
     d1 = []
     d2 = []
 
-    for i in range(28):
-        for j, dimreduc_method in enumerate(['DCA', 'KCA', 'LQGCA', 'PCA']):
+    for i in range(len(data_files)):
+        for j, dimreduc_method in enumerate(['LQGCA', 'PCA']):
             df_ = apply_df_filters(A_df, data_file=data_files[i], dimreduc_method=dimreduc_method)
             # A = df_.iloc[0]['ssid_A']
             # U, P = scipy.linalg.polar(A)
@@ -206,7 +225,7 @@ if __name__ == '__main__':
 
     datpath = '/mnt/Secondary/data/sabes'
     dat = load_sabes('%s/%s' % (datpath, data_file))
-    dat = reach_segment_sabes(dat, start_times[data_file.split('.mat')[0]])
+    dat = reach_segment_sabes(dat, data_file=data_file.split('.mat')[0])
 
     x = np.array([StandardScaler().fit_transform(dat['spike_rates'][j, ...]) 
                 for j in range(dat['spike_rates'].shape[0])])
@@ -341,10 +360,10 @@ if __name__ == '__main__':
 
     medianprops = dict(linewidth=0)
     #bplot = ax.boxplot([d_U[:, 2, 1], d_U[:, 3, 1]], patch_artist=True, medianprops=medianprops, notch=True, vert=False, showfliers=False)
-    bplot = ax.boxplot([maxim[:, 2, 0], maxim[:, 3, 0]], patch_artist=True, medianprops=medianprops, notch=True, vert=False, showfliers=False)
+    bplot = ax.boxplot([maxim[:, 0, 0], maxim[:, 1, 0]], patch_artist=True, medianprops=medianprops, notch=True, vert=False, showfliers=False)
 
     # _, p = scipy.stats.wilcoxon(d_U[:, 2, 1], d_U[:, 3, 1])
-    _, p = scipy.stats.wilcoxon(maxim[:, 2, 0], maxim[:, 3, 0])
+    _, p = scipy.stats.wilcoxon(maxim[:, 0, 0], maxim[:, 1, 0])
     print('p:%f' % p)
 
     method1 = 'FCCA'

@@ -215,7 +215,7 @@ def lr_encoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=
     # Xtrain = Xtrain[decoding_window//2:, :]
     # Xtest = Xtest[:Ztest.shape[1], :]
 
-    encodingregressor = LinearRegression(normalize=True, fit_intercept=True)
+    encodingregressor = LinearRegression(fit_intercept=True)
 
     # Throw away acceleration
     # Ztest = Ztest[:, 0:4]
@@ -232,7 +232,7 @@ def lr_decoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=
     behavior_dim = Ztrain[0].shape[-1]
 
     Xtest, Xtrain, Ztest, Ztrain = lr_preprocess(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window, include_velocity, include_acc)
-    decodingregressor = LinearRegression(normalize=True, fit_intercept=True)
+    decodingregressor = LinearRegression(fit_intercept=True)
     decodingregressor.fit(Xtrain, Ztrain)
     Zpred = decodingregressor.predict(Xtest)
 

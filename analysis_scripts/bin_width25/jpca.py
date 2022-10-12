@@ -64,7 +64,7 @@ if __name__ == '__main__':
         figpath = '/home/akumar/nse/neural_control/figs/final'
 
 
-    with open('/mnt/Secondary/data/postprocessed/indy_decoding_df2.dat', 'rb') as f:
+    with open('/mnt/Secondary/data/postprocessed/indy_dimreduc25.dat', 'rb') as f:
         sabes_df = pickle.load(f)
     sabes_df = pd.DataFrame(sabes_df)
 
@@ -79,7 +79,7 @@ if __name__ == '__main__':
         for i, data_file in tqdm(enumerate(data_files)):
             dat = load_sabes('%s/%s' % (dpath, data_file))
             y = np.squeeze(dat['spike_rates'])
-            for dimreduc_method in ['DCA', 'KCA', 'LQGCA', 'PCA']:
+            for dimreduc_method in ['LQGCA', 'PCA']:
                 df_ = apply_df_filters(sabes_df, data_file=data_file, fold_idx=0, dim=DIM, dimreduc_method=dimreduc_method)
                 if dimreduc_method == 'LQGCA':
                     df_ = apply_df_filters(df_, dimreduc_args={'T': 3, 'loss_type': 'trace', 'n_init': 10})
@@ -161,14 +161,14 @@ if __name__ == '__main__':
 
     A_df = pd.DataFrame(resultsd3)
 
-    d_U = np.zeros((28, 4, 3))
-    maxim = np.zeros((28, 4, 2))
+    d_U = np.zeros((28, 2, 3))
+    maxim = np.zeros((28, 2, 2))
 
     d1 = []
     d2 = []
 
     for i in range(28):
-        for j, dimreduc_method in enumerate(['DCA', 'KCA', 'LQGCA', 'PCA']):
+        for j, dimreduc_method in enumerate(['LQGCA', 'PCA']):
             df_ = apply_df_filters(A_df, data_file=data_files[i], dimreduc_method=dimreduc_method)
             # A = df_.iloc[0]['ssid_A']
             # U, P = scipy.linalg.polar(A)
@@ -341,10 +341,10 @@ if __name__ == '__main__':
 
     medianprops = dict(linewidth=0)
     #bplot = ax.boxplot([d_U[:, 2, 1], d_U[:, 3, 1]], patch_artist=True, medianprops=medianprops, notch=True, vert=False, showfliers=False)
-    bplot = ax.boxplot([maxim[:, 2, 0], maxim[:, 3, 0]], patch_artist=True, medianprops=medianprops, notch=True, vert=False, showfliers=False)
+    bplot = ax.boxplot([maxim[:, 0, 0], maxim[:, 1, 0]], patch_artist=True, medianprops=medianprops, notch=True, vert=False, showfliers=False)
 
     # _, p = scipy.stats.wilcoxon(d_U[:, 2, 1], d_U[:, 3, 1])
-    _, p = scipy.stats.wilcoxon(maxim[:, 2, 0], maxim[:, 3, 0])
+    _, p = scipy.stats.wilcoxon(maxim[:, 0, 0], maxim[:, 1, 0])
     print('p:%f' % p)
 
     method1 = 'FCCA'

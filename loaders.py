@@ -406,6 +406,72 @@ def load_sabes(filename, bin_width=50, boxcox=0.5, filter_fn='none', filter_kwar
             dat['behavior'] = behavior
         return dat
 
+def load_sabes_wf(filename, spike_threshold=100, region='M1'):
+
+    # Load MATLAB file
+    with h5py.File(filename, "r") as f:
+        # Get channel names (e.g. M1 001 or S1 001)
+        n_channels = f['chan_names'].shape[1]
+        chan_names = []
+        for i in range(n_channels):
+            chan_names.append(f[f['chan_names'][0, i]][()].tobytes()[::2].decode())
+        # Get M1 and S1 indices
+        M1_indices = [i for i in range(n_channels) if chan_names[i].split(' ')[0] == 'M1']
+        S1_indices = [i for i in range(n_channels) if chan_names[i].split(' ')[0] == 'S1']
+
+        # Get time
+        t = f['t'][0, :]
+        # Individually process M1 and S1 indices
+        dat = {}
+
+        if region == 'M1':
+            indices = M1_indices
+        elif region == 'S1':
+            indices = S1_indices
+            print(len(indices))
+        elif region == 'both':
+            indices = list(range(n_channels))
+
+        # Perform binning
+        n_channels = len(indices)
+        n_sorted_units = f["spikes"].shape[0] - 1  # The FIRST one is the 'hash' -- ignore!
+        n_units = n_channels * n_sorted_units
+        max_t = t[-1]
+
+        spike_times = np.zeros((n_sorted_units - 1, len(indices))).astype(np.object)
+        wf = np.zeros((n_sorted_units - 1, len(indices))).astype(np.object)
+
+        for i, chan_idx in enumerate(indices):
+            for unit_idx in range(1, n_sorted_units): # ignore hash
+                spike_times_ = f[f["spikes"][unit_idx, chan_idx]][()]
+                # Ignore this case (no data)
+                if spike_times_.shape == (2,):
+                    spike_times[unit_idx - 1, i] = np.nan
+                else:
+                    # offset spike times
+                    spike_times[unit_idx - 1, i] = spike_times_[0, :] - t[0]
+
+                wf[unit_idx - 1, i] = f[f['wf'][unit_idx, chan_idx]][()].T
+            
+        # Reshape into format (ntrials, units)
+        spike_times = spike_times.reshape((1, -1))
+        wf = wf.reshape((1, -1))
+
+        # Apply spike threshold
+        sizes = np.array([[1 if np.isscalar(spike_times[i, j]) else spike_times[i, j].size for j in range(spike_times.shape[1])]
+                          for i in range(spike_times.shape[0])])
+
+        sufficient_spikes = np.zeros(spike_times.shape).astype(np.bool_)
+        for i in range(spike_times.shape[0]):
+            for j in range(spike_times.shape[1]):
+                if spike_threshold is not None:
+                    if sizes[i, j] >= spike_threshold:
+                        sufficient_spikes[i, j] = 1
+        
+        wf = wf[sufficient_spikes]
+        return wf
+
+
 def load_peanut_across_epochs(fpath, epochs, spike_threshold, **loader_kwargs):
 
     dat_allepochs = {}

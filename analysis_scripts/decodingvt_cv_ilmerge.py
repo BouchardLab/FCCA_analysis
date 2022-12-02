@@ -182,7 +182,7 @@ if __name__ == '__main__':
     measure_from_end=False
 
     # Sliding windows
-    window_width = 10
+    window_width = 2
     #window_centers = np.linspace(0, 35, 25)[0:9]
     window_centers = np.arange(20)
     windows = [(int(wc - window_width//2), int(wc + window_width//2)) for wc in window_centers]
@@ -282,7 +282,6 @@ if __name__ == '__main__':
     lag = 4
     decoding_window = 5
 
-
     # Distribute windows across ranks
     windows = np.array_split(windows, comm.size)[comm.rank]
     wr2 = np.zeros((len(windows), 5, 2, 6))
@@ -295,15 +294,19 @@ if __name__ == '__main__':
             xpca = X @ coefpca[fold]
             xfcca = X @ coeffcca[fold]
 
-            r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete,  _ = lr_decode_windowed(xpca, Z, lag, window, transition_times, train_idxs=train_idxs,
-                                                                                                test_idxs=test_idxs, decoding_window=decoding_window, measure_from_end=measure_from_end) 
+            # Need to turn train/test_idxs returned by KFold into an indexing of the transition times
+            tt_train_idxs = [idx for idx in range(len(transition_times)) if transition_times[idx][0] in train_idxs and transition_times[idx][1] in train_idxs]
+            tt_test_idxs = [idx for idx in range(len(transition_times)) if transition_times[idx][0] in test_idxs and transition_times[idx][1] in test_idxs]
+
+            r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete,  _ = lr_decode_windowed(xpca, Z, lag, window, transition_times, train_idxs=tt_train_idxs,
+                                                                                                test_idxs=tt_test_idxs, decoding_window=decoding_window, measure_from_end=measure_from_end) 
             wr2[j, fold, 0, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
-            r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete,  _ = lr_decode_windowed(xfcca, Z, lag, window, transition_times, train_idxs=train_idxs,
-                                                                                            test_idxs=test_idxs, decoding_window=decoding_window, measure_from_end=measure_from_end)
+            r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete,  _ = lr_decode_windowed(xfcca, Z, lag, window, transition_times, train_idxs=tt_train_idxs,
+                                                                                            test_idxs=tt_test_idxs, decoding_window=decoding_window, measure_from_end=measure_from_end)
             wr2[j, fold, 1, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
 
     windows = np.array(windows)
-    dpath = '/home/akumar/nse/neural_control/data/decodingvt_cv_ilmerge'
+    dpath = '/home/akumar/nse/neural_control/data/decodingvt_cv_ilmerge3'
     #dpath = '/mnt/sdb1/nc_data/decodingvt'
     with open('%s/didx%d_rank%d_%s_%d.dat' % (dpath, didx, comm.rank, filter_string, measure_from_end), 'wb') as f:
         f.write(pickle.dumps(wr2))

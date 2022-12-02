@@ -292,7 +292,9 @@ if __name__ == '__main__':
 
     if make_psth:
         fig, ax = plt.subplots(1, 1, figsize=(4, 4))
-        data_file = 'indy_20160915_01.mat'
+        #data_files = np.unique(top_neurons_df['data_file'].values)
+        #data_file = data_files[4]
+        data_file='indy_20161006_02.mat'
 
         df_ = apply_df_filters(top_neurons_df, data_file=data_file)
         data_path = '/mnt/Secondary/data/sabes'
@@ -312,11 +314,15 @@ if __name__ == '__main__':
             x_ = np.array([dat['spike_rates'][0, dat_segment['transition_times'][idx][0]:dat_segment['transition_times'][idx][0] + T, tn] 
                         for idx in valid_transitions])
 
-            x_ = StandardScaler().fit_transform(x_.T).T
             x_ = gaussian_filter1d(x_, sigma=2)
+            x_ = StandardScaler().fit_transform(x_.T).T
             x_ = np.mean(x_, axis=0)
 
-            ax.plot(time, x_, 'k', alpha=0.5)
+            h1 = ax.plot(time, x_, 'k', alpha=0.5)
+
+        T = 30
+        t = np.array([t_[1] - t_[0] for t_ in dat_segment['transition_times']])
+        valid_transitions = np.arange(t.size)[t >= T]
 
         #ax.spines['left'].set_position('center')
         ax.spines['bottom'].set_position('center')
@@ -330,12 +336,14 @@ if __name__ == '__main__':
         ax.yaxis.set_ticks_position('left')
 
         ax.set_xticks([0, 1500])
-        ax.set_xticklabels([0, 1.5])
-
-        ax.set_xlabel('Time (s)', fontsize=12)
+        ax.set_xticklabels([])
+        ax.set_yticks([-1, 0, 1])
+        ax.tick_params(axis='both', labelsize=12)
+        #ax.set_xlabel('Time (s)', fontsize=12)
         ax.xaxis.set_label_coords(1.05, 0.56)
-        ax.set_ylabel('Z-scored Response', fontsize=12)
-        ax.set_title('Top PCA units', fontsize=14)
+        #ax.set_ylabel('Z-scored Response', fontsize=12)
+        ax.legend([h1], ['PCA'])
+        #ax.set_title('Top PCA units', fontsize=14)
 
         fig.savefig('%s/topPCApsth.pdf' % figpath, bbox_inches='tight', pad_inches=0)
 
@@ -356,8 +364,8 @@ if __name__ == '__main__':
             x_ = np.array([dat['spike_rates'][0, dat_segment['transition_times'][idx][0]:dat_segment['transition_times'][idx][0] + T, tn] 
                         for idx in valid_transitions])
             
-            x_ = StandardScaler().fit_transform(x_.T).T
             x_ = gaussian_filter1d(x_, sigma=2)
+            x_ = StandardScaler().fit_transform(x_.T).T
             x_ = np.mean(x_, axis=0)
 
             ax.plot(time, x_, 'r', alpha=0.5)
@@ -374,12 +382,14 @@ if __name__ == '__main__':
         ax.yaxis.set_ticks_position('left')
 
         ax.set_xticks([0, 1500])
-        ax.set_xticklabels([0, 1.5])
+        ax.set_yticks([-1, 0, 1])
+        ax.set_xticklabels([])
+        ax.tick_params(axis='both', labelsize=12)
 
-        ax.set_xlabel('Time (s)', fontsize=12)
+        #ax.set_xlabel('Time (s)', fontsize=12)
         ax.xaxis.set_label_coords(1.05, 0.56)
-        ax.set_ylabel('Z-scored Response', fontsize=12)
-        ax.set_title('Top FCCA units', fontsize=14)
+        #ax.set_ylabel('Z-scored Response', fontsize=12)
+        #ax.set_title('Top FCCA units', fontsize=14)
 
         fig.savefig('%s/topFCCApsth.pdf' % figpath, bbox_inches='tight', pad_inches=0)
 
@@ -397,7 +407,7 @@ if __name__ == '__main__':
         data_files = np.unique(itrim_df['data_file'].values)
 
         # Collect the desired single unit statistics into an array with the same ordering as those present in the loadings df
-        stats = ['decoding_weights', 'su_r2_enc', 'su_var', 'su_act']
+        stats = ['su_var', 'su_act', 'decoding_weights', 'su_r2_enc']
 
         carray = []
         for i, data_file in enumerate(data_files):
@@ -421,31 +431,34 @@ if __name__ == '__main__':
                 for k in range(carray[0].shape[1]):
                     df = apply_df_filters(itrim_df, data_file=data_files[i])
 
-                    # Enforce intersection with the upper quartile of each respective statistic
-                    # Method loadings
                     x1 = df[keys[j]].values
-                    q1 = np.quantile(x1, 0.75)
-                    # # Single unit statistic
                     x2 = carray[i][:, k]
-                    q2 = np.quantile(x2, 0.75)
-
-                    idxs1 = np.argwhere(x1 > q1)[:, 0]
-                    idxs2 = np.argwhere(x2 > q2)[:, 0]
-                    #intersct = np.array(list(set(idxs1).intersection(set(idxs2))))
-                    #intersct = idxs1
-                    intersct = np.arange(x1.size)
-                    if len(intersct) > 0:
-                        su_r[i, j, k] = scipy.stats.spearmanr(x1[intersct], x2[intersct])[0]
-                    else:
-                        su_r[i, j, k] = 0
+                    su_r[i, j, k] = scipy.stats.spearmanr(x1, x2)[0]
 
         fig, ax = plt.subplots(figsize=(5, 5),)
 
-        bars = ax.bar([0, 1, 2, 3, 5, 6, 7, 8],
-                    np.mean(su_r[:, -2:, :], axis=0).ravel(),
-                    color=['r', 'r', 'r', 'r', 'k', 'k', 'k', 'k'], alpha=0.65,
-                    yerr=np.std(su_r[:, -2:, :], axis=0).ravel()/np.sqrt(28), capsize=5)
+        # Prior to averaging, run tests
+        _, p1 = scipy.stats.wilcoxon(su_r[:, 0, 0], su_r[:, 1, 0])
+        _, p2 = scipy.stats.wilcoxon(su_r[:, 0, 1], su_r[:, 1, 1])
+        _, p3 = scipy.stats.wilcoxon(su_r[:, 0, 2], su_r[:, 1, 2])
+        _, p4 = scipy.stats.wilcoxon(su_r[:, 0, 3], su_r[:, 1, 3])
 
+        print(p1)
+        print(p2)
+        print(p3)
+        print(p4)
+
+        std_err = np.std(su_r, axis=0).ravel()/np.sqrt(35)
+        su_r = np.mean(su_r, axis=0).ravel()
+
+        # Permute so that each statistic is next to each other
+        su_r = su_r[[0, 4, 1, 5, 2, 6, 3, 7]]
+        std_err = std_err[[0, 4, 1, 5, 2, 6, 3, 7]]
+
+        bars = ax.bar([0, 1, 3, 4, 6, 7, 9, 10],
+                      su_r,
+                      color=['r', 'k', 'r', 'k', 'r', 'k', 'r', 'k'], alpha=0.65,
+                      yerr=std_err, capsize=5)
 
         # Place numerical values above the bars
         for rect in bars: 
@@ -456,24 +469,26 @@ if __name__ == '__main__':
                 ax.text(rect.get_x() + rect.get_width()/2, np.sign(rect.get_height()) * (np.abs(rect.get_height()) + 0.11), '%.2f' % rect.get_height(),
                         ha='center', va='bottom', fontsize=10)
 
-        ax.set_ylim([-1.05, 1.1])
-        ax.set_xticks([0, 1, 2, 3, 5, 6, 7, 8])
+        # Add significance tests
+        ax.text(0.5, -0.47, '****', ha='center')
+        ax.text(3.5, 0.7, '**', ha='center')
+        ax.text(6.5, 0.6, '***', ha='center')
+        ax.text(9.5, 0.76, '****', ha='center')
 
-        ax.set_xticklabels(['Decoding Weights', 'S.U. Enc. ' + r'$r^2$', 'S.U. Variance', 'Autocorr. time',
-                            'Decoding Weights', 'S.U. Enc. ' + r'$r^2$', 'S.U. Variance', 'Autocorr. time.'], rotation=45, fontsize=14, ha='right')
+
+        ax.set_ylim([-0.5, 1.1])
+        ax.set_xticks([0.5, 3.5, 6.5, 9.5])
+
+        ax.set_xticklabels(['S.U. Variance', 'Autocorr. time', 'Decoding Weights', 'S.U. Enc. ' + r'$r^2$'], rotation=30, fontsize=12, ha='right')
 
         ax.tick_params(axis='y', labelsize=12)
 
-        ax.text(0, 1.15, 'FCCA loadings', fontsize=12, ha='left', va='bottom')
-        # ax.annotate("", xy=(-0.5, -0.3), xytext=(3.5, -0.3), 
-        #             xycoords='data', textcoords='data',
-        #             arrowprops=dict(arrowstyle='-', connectionstyle='bar,fraction=-0.1'))
-
-        ax.text(4.75, 1.15, 'PCA loadings', fontsize=12, ha='left', va='bottom')
-        # ax.annotate("", xy=(4.5, -0.3), xytext=(8.5, -0.3), 
-        #             xycoords='data', textcoords='data',
-        #             arrowprops=dict(arrowstyle='-', connectionstyle='bar,fraction=-0.1'))
+        # Manual creation of legend
+        colors = ['r', 'k']
+        handles = [plt.Rectangle((0,0),1,1, color=c, alpha=0.65) for c in colors]
+        labels = ['FCCA', 'PCA']
+        ax.legend(handles, labels, loc='lower right')
 
         ax.set_ylabel('Spearman Correlation', fontsize=14)
-        ax.set_yticks([-1., -0.5, 0, 0.5, 1.])
+        ax.set_yticks([-0.5, 0, 0.5, 1.])
         fig.savefig('%s/su_spearman_d%d.pdf' % (figpath, DIM), bbox_inches='tight', pad_inches=0)

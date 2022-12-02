@@ -32,7 +32,7 @@ def load_preprocessed(path, **kwargs):
     return datM1, datS1, lparam
 
 # Check which tasks have already been completed and prune from the task list
-def prune_ccf_tasks(tasks, progress_file):
+def prune_tasks(tasks, progress_file):
     if not os.path.exists(progress_file):
         return tasks
     else:
@@ -195,7 +195,7 @@ def main(cmd_args, args):
                 nS1 = globals()['XS1'].shape[-1]
 
                 tasks = list(itertools.product(np.arange(nS1), np.arange(nM1)))
-                tasks = prune_ccf_tasks(tasks, progress_file)
+                tasks = prune_tasks(tasks, progress_file)
             else:
                 tasks = None
 
@@ -209,7 +209,7 @@ def main(cmd_args, args):
             nS1 = globals()['XS1'].shape[-1]
 
             tasks = list(itertools.product(np.arange(nS1), np.arange(nM1)))
-            tasks = prune_ccf_tasks(tasks, progress_file)
+            tasks = prune_tasks(tasks, progress_file)
             pool = SerialPool()
 
         if len(tasks) > 0:
@@ -233,7 +233,7 @@ def main(cmd_args, args):
         if comm is not None:
             if comm.rank == 0:            
                 tasks = list(itertools.product(args['task_args']['task_args']['lags'], args['task_args']['task_args']['windows']))
-                tasks = prune_ccf_tasks(tasks, progress_file)
+                tasks = prune_tasks(tasks, progress_file)
             else:
                 tasks = None
 
@@ -247,7 +247,7 @@ def main(cmd_args, args):
             nS1 = globals()['XS1'].shape[-1]
 
             tasks = list(itertools.product(args['task_args']['task_args']['lags'], args['task_args']['task_args']['windows']))
-            tasks = prune_ccf_tasks(tasks, progress_file)
+            tasks = prune_tasks(tasks, progress_file)
             pool = SerialPool()
 
         if len(tasks) > 0:

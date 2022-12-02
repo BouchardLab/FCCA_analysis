@@ -356,11 +356,11 @@ if __name__ == '__main__':
     fig.savefig('%s/trajectories.pdf' % figpath, bbox_inches='tight', pad_inches=0)
 
     # Boxplots
-    fig, ax = plt.subplots(1, 1, figsize=(5, 2))
+    fig, ax = plt.subplots(1, 1, figsize=(5, 2.5))
 
     medianprops = dict(linewidth=0)
     #bplot = ax.boxplot([d_U[:, 2, 1], d_U[:, 3, 1]], patch_artist=True, medianprops=medianprops, notch=True, vert=False, showfliers=False)
-    bplot = ax.boxplot([maxim[:, 0, 0], maxim[:, 1, 0]], patch_artist=True, medianprops=medianprops, notch=True, vert=False, showfliers=False)
+    bplot = ax.boxplot([maxim[:, 0, 0], maxim[:, 1, 0]], patch_artist=True, medianprops=medianprops, notch=True, vert=False, showfliers=False, widths=[0.25, 0.25])
 
     # _, p = scipy.stats.wilcoxon(d_U[:, 2, 1], d_U[:, 3, 1])
     _, p = scipy.stats.wilcoxon(maxim[:, 0, 0], maxim[:, 1, 0])
@@ -369,16 +369,20 @@ if __name__ == '__main__':
     method1 = 'FCCA'
     method2 = 'PCA'
  
-    ax.set_yticklabels([method1, method2], fontsize=14)
-    ax.tick_params(axis='y', labelsize=12)
-    ax.set_xlabel('Sum of Imaginary Eigenvalues (a.u.)', fontsize=14)
-    ax.invert_xaxis()
+    ax.set_yticklabels([method1, method2], fontsize=18, rotation=45)
+    ax.set_xticks([0, 0.05, 0.1])
+    ax.tick_params(axis='both', labelsize=16)
+    #ax.set_ylabel(r'$\sum_i Im(\lambda_i)$', fontsize=22)
+    ax.set_xlabel('Sum Imaginary Eigenvalues', fontsize=18
+    )
+    ax.set_title('****', fontsize=22)
+    #ax.invert_xaxis()
  
     # fill with colors
     colors = ['red', 'black']
     for patch, color in zip(bplot['boxes'], colors):
         patch.set_facecolor(color)
-        patch.set_alpha(0.75)
+        patch.set_alpha(0.6)
 
     # ax.set_xlim([13, 0])
 

@@ -79,7 +79,7 @@ def gen_run():
 
     with open(name, 'w') as rsh:
         rsh.write('#!/bin/bash\n')
-        for di in didx:
+        for di in didxs:
             rsh.write('mpirun -n 8 python s1m1vt.py %d %d --error_thresh=%.2f --error_op=%s --q=%.2f --filter_op=%s\n'
                     % (di, 0, 1, 'le', 0, 'le'))
 
@@ -200,7 +200,7 @@ if __name__ == '__main__':
     comm = MPI.COMM_WORLD
 
     #dimvals = np.array([2, 6, 10, 15])
-    ccadimval = 6
+    ccadimval = 20
     # Fix dimension to 6
     dimval = 6
     measure_from_end=False
@@ -251,7 +251,8 @@ if __name__ == '__main__':
         assert(dffca.shape[0] == 5)
         assert(dfpca.shape[0] == 5)
         
-        coefcca = [apply_df_filters(ccadf, fold_idx=k).iloc[0]['ccamodel'].y_weights_[:, 0:ccadimval] for k in range(5)]
+        coefcca_x = [apply_df_filters(ccadf, fold_idx=k).iloc[0]['ccamodel'].x_rotations_[:, 0:ccadimval] for k in range(5)]
+        coefcca = [apply_df_filters(ccadf, fold_idx=k).iloc[0]['ccamodel'].y_rotations_[:, 0:ccadimval] for k in range(5)]
         coefpca = [apply_df_filters(dfpca, fold_idx=k).iloc[0]['coef'][:, 0:dimval] for k in range(5)]
         coeffcca = [apply_df_filters(dffca, fold_idx=k).iloc[0]['coef'][:, 0:dimval] for k in range(5)]
 
@@ -284,6 +285,7 @@ if __name__ == '__main__':
         coefpca = None
         coeffcca = None
         coefcca = None
+        coefcca_x = None
         X = None
         Y = None
         transition_times = None
@@ -296,6 +298,7 @@ if __name__ == '__main__':
     coefpca = comm.bcast(coefpca)
     coeffcca = comm.bcast(coeffcca)
     coefcca = comm.bcast(coefcca)
+    coefcca_x = comm.bcast(coefcca_x)
 
     # S1 activity
     X = comm.bcast(X)
@@ -314,119 +317,148 @@ if __name__ == '__main__':
 
     # Distribute windows across ranks
     windows = np.array_split(windows, comm.size)[comm.rank]
-    wr2 = np.zeros((len(windows), 5, 10))
+
+    # Regressions that are independent of CCA dimension
+    ccadims = np.array([1, 2, 6, 10, -1])
+
+    # S1 -> M1 regressions
+    wr2_S1 = np.zeros((len(windows), 5, 4, ccadims.size))
+    # M1 -> M1 regressions
+    wr2_M1 = np.zeros((len(windows), 5, 4, ccadims.size))
+
+    # CCA regression
+    wr2_CCA = np.zeros((len(windows), 5, 2, ccadims.size))
+
+    # CCA regression
+    wr2_CCA = np.zeros9(len(Windo))
+
+    # Iterate over several cca dims to get a sense of how this scales
 
     # Cross-validate the prediction
     for j, window in enumerate(windows):
         for fold, (train_idxs, test_idxs) in enumerate(KFold(n_splits=5).split(Y)): 
-            # We have been given a list of windows for each transition
-            if len(window) > 2:
-                W = [w for win in window for w in win]
-                win_min = min(W)
-            else:
-                win_min = window[0]
+            for k, ccadim in enumerate(ccadims):
+                # We have been given a list of windows for each transition
+                if len(window) > 2:
+                    W = [w for win in window for w in win]
+                    win_min = min(W)
+                else:
+                    win_min = window[0]
 
-            if win_min >= 0:
-                win_min = 0
+                if win_min >= 0:
+                    win_min = 0
 
-            ypca = Y @ coefpca[fold]
-            yfcca = Y @ coeffcca[fold]
-            ycca = Y @ coefcca[fold]
-            # Apply projection
+                ypca = Y @ coefpca[fold]
+                yfcca = Y @ coeffcca[fold]
+                if ccadim == -1:
+                    ycca = Y @ coefcca[fold][:, 0:1]
+                    xcca = X
+                else:
+                    ycca = Y @ coefcca[fold][:, 0:ccadim]
+                    xcca = X @ coefcca_x[fold][:, 0:ccadim]
+                    if ccadim == 1:
+                        ycca = np.reshape(ycca, (-1, 1))
+                        xcca = np.reshape(xcca, (-1, 1))
 
-            tt_train = [t for t in transition_times 
-                        if t[0] >= min(train_idxs) and t[1] <= max(train_idxs) and t[0] > (lag + np.abs(win_min)) and t[1] < (X.shape[0] - lag - np.abs(win_min))]
+                print(ccadim)
+                print(ycca.shape)
+                print(xcca.shape)
 
-            tt_test = [t for t in transition_times 
-                    if t[0] >= min(test_idxs) and t[0] <= max(test_idxs) and t[0] > (lag + np.abs(win_min)) and t[1] < (X.shape[0] - lag - np.abs(win_min))]
+                tt_train = [t for t in transition_times 
+                            if t[0] >= min(train_idxs) and t[1] <= max(train_idxs) and t[0] > (lag + np.abs(win_min)) and t[1] < (X.shape[0] - lag - np.abs(win_min))]
 
-
-            xxtrain, yytrain = apply_window(X, ypca, lag, window, tt_train, decoding_window, measure_from_end=measure_from_end,
-                                        include_velocity=False, include_acc=False)
-            xxtest, yytest = apply_window(X, ypca, lag, window, tt_test, decoding_window, measure_from_end=measure_from_end,
-                                        include_velocity=False, include_acc=False)
-
-            regressor = RidgeCV().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
-                                      StandardScaler().fit_transform(np.concatenate(yytrain)))
-
-            r2train = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtrain)),
-                                    StandardScaler().fit_transform(np.concatenate(yytrain)))
-            r2test = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtest)),
-                                    StandardScaler().fit_transform(np.concatenate(yytest)))
-
-            wr2[j, fold, 0] = r2train
-            wr2[j, fold, 1] = r2test
-
-            xxtrain, yytrain = apply_window(X, yfcca, lag, window, tt_train, decoding_window, measure_from_end=measure_from_end,
-                                        include_velocity=False, include_acc=False)
-            xxtest, yytest = apply_window(X, yfcca, lag, window, tt_test, decoding_window, measure_from_end=measure_from_end,
-                                        include_velocity=False, include_acc=False)
-
-            regressor = RidgeCV().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
-                                      StandardScaler().fit_transform(np.concatenate(yytrain)))
-
-            r2train = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtrain)),
-                                    StandardScaler().fit_transform(np.concatenate(yytrain)))
-            r2test = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtest)),
-                                    StandardScaler().fit_transform(np.concatenate(yytest)))
-
-            wr2[j, fold, 2] = r2train
-            wr2[j, fold, 3] = r2test
-
-            xxtrain, yytrain = apply_window(ycca, ypca, lag, window, tt_train, decoding_window, measure_from_end=measure_from_end,
-                                        include_velocity=False, include_acc=False)
-            xxtest, yytest = apply_window(ycca, ypca, lag, window, tt_test, decoding_window, measure_from_end=measure_from_end,
-                                        include_velocity=False, include_acc=False)
-
-            regressor = RidgeCV().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
-                                      StandardScaler().fit_transform(np.concatenate(yytrain)))
-
-            r2train = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtrain)),
-                                    StandardScaler().fit_transform(np.concatenate(yytrain)))
-            r2test = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtest)),
-                                    StandardScaler().fit_transform(np.concatenate(yytest)))
-
-            wr2[j, fold, 4] = r2train
-            wr2[j, fold, 5] = r2test
+                tt_test = [t for t in transition_times 
+                        if t[0] >= min(test_idxs) and t[0] <= max(test_idxs) and t[0] > (lag + np.abs(win_min)) and t[1] < (X.shape[0] - lag - np.abs(win_min))]
 
 
-            xxtrain, yytrain = apply_window(ycca, yfcca, lag, window, tt_train, decoding_window, measure_from_end=measure_from_end,
-                                        include_velocity=False, include_acc=False)
-            xxtest, yytest = apply_window(ycca, yfcca, lag, window, tt_test, decoding_window, measure_from_end=measure_from_end,
-                                        include_velocity=False, include_acc=False)
+                xxtrain, yytrain = apply_window(xcca, ypca, lag, window, tt_train, decoding_window, measure_from_end=measure_from_end,
+                                            include_velocity=False, include_acc=False)
+                xxtest, yytest = apply_window(xcca, ypca, lag, window, tt_test, decoding_window, measure_from_end=measure_from_end,
+                                            include_velocity=False, include_acc=False)
 
-            regressor = RidgeCV().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
-                                      StandardScaler().fit_transform(np.concatenate(yytrain)))
+                regressor = RidgeCV().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
+                                        StandardScaler().fit_transform(np.concatenate(yytrain)))
 
-            r2train = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtrain)),
-                                    StandardScaler().fit_transform(np.concatenate(yytrain)))
-            r2test = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtest)),
-                                    StandardScaler().fit_transform(np.concatenate(yytest)))
+                r2train = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtrain)),
+                                        StandardScaler().fit_transform(np.concatenate(yytrain)))
+                r2test = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtest)),
+                                        StandardScaler().fit_transform(np.concatenate(yytest)))
 
-            wr2[j, fold, 6] = r2train
-            wr2[j, fold, 7] = r2test
+                wr2_S1[j, fold, 0, k] = r2train
+                wr2_S1[j, fold, 1, k] = r2test
 
-            xxtrain, yytrain = apply_window(X, ycca[:, 0][:, np.newaxis], lag, window, tt_train, decoding_window, measure_from_end=measure_from_end,
-                                        include_velocity=False, include_acc=False)
-            xxtest, yytest = apply_window(X, ycca[:, 0][:, np.newaxis], lag, window, tt_test, decoding_window, measure_from_end=measure_from_end,
-                                        include_velocity=False, include_acc=False)
+                xxtrain, yytrain = apply_window(xcca, yfcca, lag, window, tt_train, decoding_window, measure_from_end=measure_from_end,
+                                            include_velocity=False, include_acc=False)
+                xxtest, yytest = apply_window(xcca, yfcca, lag, window, tt_test, decoding_window, measure_from_end=measure_from_end,
+                                            include_velocity=False, include_acc=False)
 
-            regressor = RidgeCV().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
-                                      StandardScaler().fit_transform(np.concatenate(yytrain)))
+                regressor = RidgeCV().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
+                                        StandardScaler().fit_transform(np.concatenate(yytrain)))
 
-            r2train = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtrain)),
-                                    StandardScaler().fit_transform(np.concatenate(yytrain)))
-            r2test = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtest)),
-                                    StandardScaler().fit_transform(np.concatenate(yytest)))
+                r2train = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtrain)),
+                                        StandardScaler().fit_transform(np.concatenate(yytrain)))
+                r2test = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtest)),
+                                        StandardScaler().fit_transform(np.concatenate(yytest)))
 
-            wr2[j, fold, 8] = r2train
-            wr2[j, fold, 9] = r2test
+                wr2_S1[j, fold, 2, k] = r2train
+                wr2_S1[j, fold, 3, k] = r2test
+
+                xxtrain, yytrain = apply_window(ycca, ypca, lag, window, tt_train, decoding_window, measure_from_end=measure_from_end,
+                                            include_velocity=False, include_acc=False)
+                xxtest, yytest = apply_window(ycca, ypca, lag, window, tt_test, decoding_window, measure_from_end=measure_from_end,
+                                            include_velocity=False, include_acc=False)
+
+                regressor = RidgeCV().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
+                                        StandardScaler().fit_transform(np.concatenate(yytrain)))
+
+                r2train = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtrain)),
+                                        StandardScaler().fit_transform(np.concatenate(yytrain)))
+                r2test = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtest)),
+                                        StandardScaler().fit_transform(np.concatenate(yytest)))
+
+                wr2_M1[j, fold, 0, k] = r2train
+                wr2_M1[j, fold, 1, k] = r2test
+
+
+                xxtrain, yytrain = apply_window(ycca, yfcca, lag, window, tt_train, decoding_window, measure_from_end=measure_from_end,
+                                            include_velocity=False, include_acc=False)
+                xxtest, yytest = apply_window(ycca, yfcca, lag, window, tt_test, decoding_window, measure_from_end=measure_from_end,
+                                            include_velocity=False, include_acc=False)
+
+                regressor = RidgeCV().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
+                                        StandardScaler().fit_transform(np.concatenate(yytrain)))
+
+                r2train = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtrain)),
+                                        StandardScaler().fit_transform(np.concatenate(yytrain)))
+                r2test = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtest)),
+                                        StandardScaler().fit_transform(np.concatenate(yytest)))
+
+                wr2_M1[j, fold, 2, k] = r2train
+                wr2_M1[j, fold, 3, k] = r2test
+
+                xxtrain, yytrain = apply_window(xcca, ycca, lag, window, tt_train, decoding_window, measure_from_end=measure_from_end,
+                                            include_velocity=False, include_acc=False)
+                xxtest, yytest = apply_window(xcca, ycca, lag, window, tt_test, decoding_window, measure_from_end=measure_from_end,
+                                            include_velocity=False, include_acc=False)
+
+                regressor = RidgeCV().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
+                                        StandardScaler().fit_transform(np.concatenate(yytrain)))
+
+                r2train = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtrain)),
+                                        StandardScaler().fit_transform(np.concatenate(yytrain)))
+                r2test = regressor.score(StandardScaler().fit_transform(np.concatenate(xxtest)),
+                                        StandardScaler().fit_transform(np.concatenate(yytest)))
+
+                wr2_CCA[j, fold, 0, k] = r2train
+                wr2_CCA[j, fold, 1, k] = r2test
 
     windows = np.array(windows)
-    dpath = '/home/akumar/nse/neural_control/data/s1m1regvt'
+    dpath = '/home/akumar/nse/neural_control/data/s1m1vt2'
     #dpath = '/mnt/sdb1/nc_data/decodingvt'
     with open('%s/didx%d_rank%d_%s_%d.dat' % (dpath, didx, comm.rank, filter_string, measure_from_end), 'wb') as f:
-        f.write(pickle.dumps(wr2))
+        f.write(pickle.dumps(wr2_S1))
+        f.write(pickle.dumps(wr2_M1))
+        f.write(pickle.dumps(wr2_CCA))
         f.write(pickle.dumps(error_filter))
         f.write(pickle.dumps(reach_filter))
         f.write(pickle.dumps(window_filter))

@@ -19,8 +19,8 @@ comm = MPI.COMM_WORLD
 
 # Analysis 4: Canonical correlation analysis
 ccal = []
-lags = np.array([0, 1, 2])
-windows = np.array([1, 3])
+lags = np.array([0])
+windows = np.array([1])
 
 fls = ['loco_20170210_03.pkl',
  'loco_20170213_02.pkl',
@@ -76,8 +76,10 @@ for fl in tqdm(fls):
                     x = form_lag_matrix(x, window)
                     y = form_lag_matrix(y, window)
 
-                ccamodel = CCA(n_components=min(x.shape[-1], y.shape[-1]))
+                ccamodel = CCA(n_components=min(50, min(x.shape[-1], y.shape[-1])))
+                t0 = time.time()
                 ccamodel.fit(x, y)
+                print(time.time() - t0)
                 r['ccamodel'] = ccamodel
                 r['fl'] = fl
                 # ccal.append(r)

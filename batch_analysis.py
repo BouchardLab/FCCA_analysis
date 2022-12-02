@@ -457,7 +457,7 @@ def parametric_dimreduc_(X, dim_vals,
         data_tasks = [(A[idx], idx) + train_test_split for idx, train_test_split
                     in enumerate(train_test_idxs)]    
         tasks = itertools.product(data_tasks, dim_vals)
-        tasks = [task + (method, method_args, results_folder) for task in tasks]
+        tasks = [task + (method, method_args, results_folder) for task in tasks]    
         # Check which tasks have already been completed
         if resume:
             tasks = prune_tasks(tasks, results_folder)
@@ -478,7 +478,7 @@ def parametric_dimreduc_(X, dim_vals,
 
     if len(tasks) > 0:
         pool.map(worker.dimreduc, tasks)
-    pool.close()
+    pool.close() 
 
     # Consolidate files into a single data file
     if comm is not None:

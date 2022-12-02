@@ -238,7 +238,7 @@ def PSTH_plot(top_neurons_df, path):
         valid_transitions = np.arange(t.size)[t >= T]
 
         # (Bin size 50 ms)
-        time = 40 * np.arange(T)
+        time = 50 * np.arange(T)
 
         for i in range(2):
             for j in range(n):
@@ -289,6 +289,8 @@ def cross_cov_calc(top_neurons_df):
     cross_covs = np.zeros((len(data_files), 2, n, n, time.size))
     cross_covs_01 = np.zeros((len(data_files), 2, n, n, time.size))
 
+    dyn_range = np.zeros((len(data_files), 2, n))
+
     for h, data_file in enumerate(data_files):
         df_ = apply_df_filters(top_neurons_df, data_file=data_file)
         dat = load_sabes('%s/%s' % (data_path, data_file), boxcox=None, high_pass=False)
@@ -296,7 +298,6 @@ def cross_cov_calc(top_neurons_df):
         
         t = np.array([t_[1] - t_[0] for t_ in dat_segment['transition_times']])
         valid_transitions = np.arange(t.size)[t >= T]
-
 
         for i in range(2):
             
@@ -317,12 +318,13 @@ def cross_cov_calc(top_neurons_df):
 
             for j in range(n):
                 for k in range(n):
-                    cross_covs[h, i, j, k] = np.correlate(x[j], x[k], mode='same')/30
-                    cross_covs_01[h, i, j, k] = np.correlate(x[j]/np.max(x[j]), x[k]/np.max(x[k]), mode='same')/30
+                    cross_covs[h, i, j, k] = np.correlate(x[j], x[k], mode='same')/T
+                    cross_covs_01[h, i, j, k] = np.correlate(x[j]/np.max(x[j]), x[k]/np.max(x[k]), mode='same')/T
+                dyn_range[h, i, j] = np.max(x[j])
 
-    return cross_covs, cross_covs_01
+    return cross_covs, cross_covs_01, dyn_range
 
-def cross_covs_statistics(cross_covs, cross_covs_01):
+def statistics(cross_covs, cross_covs_01, dyn_range):
     data_path = globals()['data_path']
     T = globals()['T']
     n = globals()['n']
@@ -364,49 +366,18 @@ def cross_covs_statistics(cross_covs, cross_covs_01):
     avg_mag1 = np.mean(mag[:, 0, :], axis=-1)
     avg_mag2 = np.mean(mag[:, 1, :], axis=-1)
 
+    avg_dyn_range1 = np.mean(dyn_range[:, 0, :], axis=-1)
+    avg_dyn_range2 = np.mean(dyn_range[:, 1, :], axis=-1)
+
     # Paired difference tests
-    wstat3, p3 = scipy.stats.wilcoxon(tau_h1, tau_h2)
-    wstat4, p4 = scipy.stats.wilcoxon(avg_mag1, avg_mag2)
+    # > , < , <
+    wstat3, p3 = scipy.stats.wilcoxon(tau_h1, tau_h2, alternative='greater')
+    wstat4, p4 = scipy.stats.wilcoxon(avg_mag1, avg_mag2, alternative='less')
+    wstat5, p5 = scipy.stats.wilcoxon(avg_dyn_range1, avg_dyn_range2, alternative='less')
 
-    return tau_max, mag, (wstat1, wstat2, wstat3, wstat4), (p1, p2, p3, p4)
+    return tau_max, mag, (wstat1, wstat2, wstat3, wstat4, wstat5), (p1, p2, p3, p4, p5)
 
-def single_unit_PI(top_neurons_df):
-
-    data_path = globals()['data_path']
-    T = globals()['T']
-    n = globals()['n']
-    bin_width = globals()['bin_width']
-
-    # (Bin size 50 ms)
-    time = 50 * np.arange(T)
-
-    data_files = np.unique(top_neurons_df['data_file'].values)
-
-    PI = np.zeros((len(data_files), 2, n))
-
-    for h, data_file in enumerate(data_files):
-        df_ = apply_df_filters(top_neurons_df, data_file=data_file)
-        dat = load_sabes('%s/%s' % (data_path, data_file), boxcox=None, high_pass=False)
-        x = dat['spike_rates'].squeeze()
-        ccm = calc_cross_cov_mats_from_data(x, 10)
-
-        for i in range(2):
-            for j in range(n):
-                tn = df_.iloc[0]['top_neurons'][i, j]    
-                pi = calc_pi_from_cross_cov_mats(ccm[:, tn, tn][:, np.newaxis, np.newaxis])
-                PI[h, i, j] = pi
-    return PI
-
-def PI_statistics(PI):
-
-    # Run paired difference tests on PI averaged across top neurons in each session. This is the more conservative test and 
-    # corresponds roughly to the strategy taken with the cross-cov statistics
-    PI_avg = np.mean(PI, axis=-1)    
-    wstat, p = scipy.stats.wilcoxon(PI_avg[:, 0], PI_avg[:, 1])
-    return (wstat,), (p,)
-
-
-def box_plots(method1, method2, tau_max, mag, PI, stats, p, path):
+def box_plots(method1, method2, tau_max, mag, dyn_range, stats, p, path):
 
     tau_h1 = [knn_entropy(tau_max[idx, 0, :][:, np.newaxis], k=5) for idx in range(tau_max.shape[0])]
     tau_h2 = [knn_entropy(tau_max[idx, 1, :][:, np.newaxis], k=5) for idx in range(tau_max.shape[0])]
@@ -445,21 +416,24 @@ def box_plots(method1, method2, tau_max, mag, PI, stats, p, path):
     avg_mag1 = np.mean(mag[:, 0, :], axis=-1)
     avg_mag2 = np.mean(mag[:, 1, :], axis=-1)
 
+    avg_dyn_range1 = np.mean(dyn_range[:, 0, :], axis=-1)
+    avg_dyn_range2 = np.mean(dyn_range[:, 1, :], axis=-1)
+
     # Boxplots
-    fig, ax = plt.subplots(1, 3, figsize=(12, 2))
+    fig, ax = plt.subplots(1, 3, figsize=(5, 4))
 
     medianprops = dict(linewidth=0)
-    bplot1 = ax[0].boxplot([tau_h1, tau_h2], patch_artist=True, medianprops=medianprops, notch=True, showfliers=False, vert=False)
-    bplot2 = ax[1].boxplot([avg_mag1, avg_mag2], patch_artist=True, medianprops=medianprops, notch=True, showfliers=False, vert=False)
-    bplot3 = ax[2].boxplot([PI[:, 0, :].ravel(), PI[:, 1, :].ravel()], 
-                           patch_artist=True, medianprops=medianprops, notch=True, showfliers=False, vert=False)
+    bplot1 = ax[0].boxplot([tau_h1, tau_h2], patch_artist=True, medianprops=medianprops, notch=True, showfliers=False, vert=True)
+    bplot2 = ax[1].boxplot([avg_mag1, avg_mag2], patch_artist=True, medianprops=medianprops, notch=True, showfliers=False, vert=True)
 
+    # Instead of PI, make boxplots of the dynamimc range (Z-scored)
+    bplot3 = ax[2].boxplot([avg_dyn_range1, avg_dyn_range2], patch_artist=True, medianprops=medianprops, notch=True, showfliers=False, vert=True)
 
-    ax[0].set_yticklabels([method1, method2])
-    ax[1].set_yticklabels([method1, method2])
-    ax[2].set_yticklabels([method1, method2])
+    ax[0].set_xticklabels([method1, method2])
+    ax[1].set_xticklabels([method1, method2])
+    ax[2].set_xticklabels([method1, method2])
 
-    ax[0].set_xticks([0, -15, -30])
+    ax[0].set_yticks([0, -15, -30])
     # ax[1].set_xticks([15, 30, 45])
     #ax[0].set_title(r'$\tau$' + '-entropy, p=%f' % p[2], fontsize=10)
     #ax[1].set_title('Avg. magnitude, stat: p=%f' % p[3], fontsize=10)
@@ -477,9 +451,9 @@ def box_plots(method1, method2, tau_max, mag, PI, stats, p, path):
     ax[1].set_title(asterix(p[3]), fontsize=10)
     ax[2].set_title(asterix(p[4]), fontsize=10)
     
-    ax[0].set_xlabel('Entropy of peak cross-corr. times', fontsize=12)
-    ax[1].set_xlabel('Average peak cross-corr.', fontsize=12)
-    ax[2].set_xlabel('Single Unit Predictive Information', fontsize=12)
+    ax[0].set_ylabel('Entropy of peak cross-corr. times', fontsize=12)
+    ax[1].set_ylabel('Average peak cross-corr.', fontsize=12)
+    ax[2].set_ylabel('Avg. Dynamic Range', fontsize=12)
 
 
     # fill with colors
@@ -490,9 +464,8 @@ def box_plots(method1, method2, tau_max, mag, PI, stats, p, path):
             patch.set_alpha(0.75)
 
     fig.tight_layout()
-    fig.savefig('%s/boxplots_with_PI.pdf' % path, bbox_inches='tight', pad_inches=0)
+    fig.savefig('%s/boxplots_with_dynrange.pdf' % path, bbox_inches='tight', pad_inches=0)
     
-
 if __name__ == '__main__':
 
     # Where to save?
@@ -543,15 +516,9 @@ if __name__ == '__main__':
     # Plot PSTH
     # PSTH_plot(top_neurons_df, figpath)
 
-    PI = single_unit_PI(top_neurons_df)
-
     # Cross-covariance stuff
-    cross_covs, cross_covs01 = cross_cov_calc(top_neurons_df)
-    tau_max, mag, stats, p = cross_covs_statistics(cross_covs, cross_covs01)
-    PI_stats, PI_p = PI_statistics(PI)
-    
-    stats += PI_stats
-    p += PI_p
+    cross_covs, cross_covs01, dyn_range = cross_cov_calc(top_neurons_df)
+    tau_max, mag, stats, p = statistics(cross_covs, cross_covs01, dyn_range)
 
-    box_plots(method1, method2, tau_max, mag, PI, stats, p, figpath)
+    box_plots(method1, method2, tau_max, mag, dyn_range, stats, p, figpath)
     

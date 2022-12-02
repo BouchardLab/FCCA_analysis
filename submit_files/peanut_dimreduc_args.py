@@ -3,10 +3,9 @@ import os
 import numpy as np
 
 #script_path = '/global/homes/a/akumar25/repos/localization/batch_analysis_sabes.py'
-f = 
 script_path = '/home/akumar/nse/neural_control/batch_analysis.py'
 
-desc = 'Optimality Principle based dimreduc on Peanut Data, methods operate on the autocorrelation sequence'
+desc = 'Peanut with FCCA properly normalized'
 data_path = '/mnt/Secondary/data/peanut'
 data_files = ['%s/data_dict_peanut_day14.obj' % data_path]
 
@@ -18,13 +17,5 @@ loader_args = [{'bin_width':25, 'epoch': epoch, 'filter_fn':'none', 'filter_kwar
                for epoch in np.arange(2, 18, 2)]
 
 # loader_args = [{'bin_width':50, 'filter_fn':'none', 'filter_kwargs':{}, 'boxcox':0.5, 'spike_threshold':100}]
-task_args = [{'dim_vals':np.arange(1, 31), 'n_folds':5, 'dimreduc_method':'DCA', 'dimreduc_args': {'T':3, 'n_init':5}},
-             {'dim_vals':np.arange(1, 31), 'n_folds':5, 'dimreduc_method':'KCA', 'dimreduc_args': {'T':3, 'causal_weights':(1, 0), 'n_init':5}},
-             {'dim_vals':np.arange(1, 31), 'n_folds':5, 'dimreduc_method':'KCA', 'dimreduc_args': {'T':3, 'causal_weights':(0, 1), 'n_init':5}},
-             {'dim_vals':np.arange(1, 31), 'n_folds':5, 'dimreduc_method':'KCA', 'dimreduc_args': {'T':3, 'causal_weights':(1, 1), 'n_init':5}},
-             {'dim_vals':np.arange(1, 31), 'n_folds':5, 'dimreduc_method':'LQGCA', 'dimreduc_args': {'T':3, 'loss_type':'trace', 'n_init':5}},
-             {'dim_vals':np.arange(1, 31), 'n_folds':5, 'dimreduc_method':'LQGCA', 'dimreduc_args': {'T':3, 'loss_type':'fro', 'n_init':5}},
-             {'dim_vals':np.arange(1, 31), 'n_folds':5, 'dimreduc_method':'LQGCA', 'dimreduc_args': {'T':3, 'loss_type':'logdet', 'n_init':5}},
-             {'dim_vals':np.arange(1, 31), 'n_folds':5, 'dimreduc_method':'LQGCA', 'dimreduc_args': {'T':3, 'loss_type':'additive', 'n_init':5}},
-             {'dim_vals':np.arange(1, 31), 'n_folds':5, 'dimreduc_method':'PCA', 'dimreduc_args': {}}]
+task_args = [{'dim_vals':np.arange(1, 31), 'n_folds':5, 'dimreduc_method':'LQGCA', 'dimreduc_args': {'T':3, 'loss_type':'trace', 'n_init':5}}]
 

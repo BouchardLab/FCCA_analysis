@@ -259,7 +259,7 @@ if __name__ == '__main__':
     filter_string = comm.bcast(filter_string)
 
     lag = 4
-    decoding_window = 5
+    decoding_window = 5\
 
     # Distribute dimvals across ranks
     dimval = dimvals[comm.rank]

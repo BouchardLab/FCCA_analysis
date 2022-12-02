@@ -110,7 +110,7 @@ def align_peanut_behavior(t, x, bins):
 #  trial threshold: If we require a spike threshold, trial threshold = 1 requires 
 #  the spike threshold to hold for the neuron for all trials. 0 would mean no trials
 def postprocess_spikes(spike_times, T, bin_width, boxcox, filter_fn, filter_kwargs,
-                       spike_threshold=0, trial_threshold=1, high_pass=False):
+                       spike_threshold=0, trial_threshold=1, high_pass=False, return_unit_filter=False):
 
     # Trials are of different duration
     if np.isscalar(T):
@@ -169,7 +169,6 @@ def postprocess_spikes(spike_times, T, bin_width, boxcox, filter_fn, filter_kwar
     # Filter out bad units
     sufficient_spikes = np.arange(spike_times.shape[1])[np.sum(insufficient_spikes, axis=0) < \
                                                         (1 - (trial_threshold -1e-3)) * spike_times.shape[0]]
-
     spike_rates = spike_rates[:, list(sufficient_spikes)]
 
     # Transpose so time is along the the second 'axis'
@@ -184,7 +183,10 @@ def postprocess_spikes(spike_times, T, bin_width, boxcox, filter_fn, filter_kwar
 
         spike_rates = np.transpose(spike_rates, (0, 2, 1))
 
-    return spike_rates
+    if return_unit_filter:
+        return spike_rates, sufficient_spikes
+    else:
+        return spike_rates
 
 def load_cv(file_path, zscore=False):
 
@@ -314,7 +316,7 @@ def load_shenoy(data_path, bin_width, boxcox, filter_fn, filter_kwargs,
     return dat
 
 def load_sabes(filename, bin_width=50, boxcox=0.5, filter_fn='none', filter_kwargs={}, spike_threshold=100,
-               std_behavior=False, region='M1', high_pass=True, segment=False, **kwargs):
+               std_behavior=False, region='M1', high_pass=True, segment=False, return_wf=False, **kwargs):
 
     # Convert bin width to s
     bin_width /= 1000
@@ -350,6 +352,8 @@ def load_sabes(filename, bin_width=50, boxcox=0.5, filter_fn='none', filter_kwar
         max_t = t[-1]
 
         spike_times = np.zeros((n_sorted_units - 1, len(indices))).astype(np.object)
+        if return_wf:
+            wf = np.zeros((n_sorted_units - 1, len(indices))).astype(np.object)
 
         for i, chan_idx in enumerate(indices):
             for unit_idx in range(1, n_sorted_units): # ignore hash
@@ -360,15 +364,27 @@ def load_sabes(filename, bin_width=50, boxcox=0.5, filter_fn='none', filter_kwar
                 else:
                     # offset spike times
                     spike_times[unit_idx - 1, i] = spike_times_[0, :] - t[0]
+    
+                if return_wf:
+                    wf[unit_idx - 1, i] = f[f['wf'][unit_idx, chan_idx]][()].T
 
         # Reshape into format (ntrials, units)
         spike_times = spike_times.reshape((1, -1))
+        if return_wf:
+            wf = wf.reshape((1, -1))
         # Total length of the time series
         T = t[-1] - t[0]
-        spike_rates = postprocess_spikes(spike_times, T, bin_width, boxcox,
-                                         filter_fn, filter_kwargs, spike_threshold, high_pass=high_pass)
-
-        dat['spike_rates'] = spike_rates
+        if return_wf:
+            spike_rates, sufficient_spikes = postprocess_spikes(spike_times, T, bin_width, boxcox,
+                                                                filter_fn, filter_kwargs, spike_threshold, high_pass=high_pass,
+                                                                return_unit_filter=True)
+            
+            wf = wf[:, list(sufficient_spikes)]               
+            dat['wf'] = wf
+        else:
+            spike_rates = postprocess_spikes(spike_times, T, bin_width, boxcox,
+                                             filter_fn, filter_kwargs, spike_threshold, high_pass=high_pass)
+        dat['spike_rates'] = spike_rates 
 
         # Get cursor position
         cursor_pos = f["cursor_pos"][:].T
@@ -453,11 +469,11 @@ def load_sabes_wf(filename, spike_threshold=100, region='M1'):
 
                 wf[unit_idx - 1, i] = f[f['wf'][unit_idx, chan_idx]][()].T
             
-        # Reshape into format (ntrials, units)
+        # # Reshape into format (ntrials, units)
         spike_times = spike_times.reshape((1, -1))
         wf = wf.reshape((1, -1))
 
-        # Apply spike threshold
+        # # Apply spike threshold
         sizes = np.array([[1 if np.isscalar(spike_times[i, j]) else spike_times[i, j].size for j in range(spike_times.shape[1])]
                           for i in range(spike_times.shape[0])])
 
@@ -465,7 +481,7 @@ def load_sabes_wf(filename, spike_threshold=100, region='M1'):
         for i in range(spike_times.shape[0]):
             for j in range(spike_times.shape[1]):
                 if spike_threshold is not None:
-                    if sizes[i, j] >= spike_threshold:
+                    if sizes[i, j] > spike_threshold:
                         sufficient_spikes[i, j] = 1
         
         wf = wf[sufficient_spikes]

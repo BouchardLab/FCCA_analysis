@@ -2,6 +2,24 @@ import numpy as np
 import scipy
 import pdb
 
+# Form a companion matrix from the autoregressive matrices
+def form_companion(w, u=None):
+    order = w.shape[0]
+    size = w.shape[1]
+    I = np.eye(size * (order - 1))
+    wcomp = np.block([list(w), [I, np.zeros((size * (order - 1), size))]])
+
+    if u is not None:
+        ucomp = [[u]]
+        for i in range(order - 1):
+            ucomp.append([np.zeros((size, size))])
+        ucomp = np.block(ucomp)
+
+        return wcomp, ucomp
+    else:
+        return wcomp
+
+
 # Calculate loadings 
 # U: matrix of shape (n_neurons * order, dim)
 # d: order of model

@@ -156,7 +156,7 @@ def reach_segment(data_file)    :
 def get_peak_assignments(velocity_seg):
     # Get the width of each peaks, exactly partitioning the time series
     velnorm = [v/np.max(v) for v in velocity_seg]
-    peak_indices = [scipy.signal.find_peaks(v, height=0.15)[0] for v in velnorm]
+    peak_indices = [scipy.signal.find_peaks(v, height=0.4)[0] for v in velnorm]
     peak_widths = [scipy.signal.peak_widths(v, peaks=pkidxs, rel_height=1.0) for v, pkidxs in zip(velnorm, peak_indices)]
 
     # Assign points to the closest peak
@@ -401,7 +401,7 @@ if __name__ == '__main__':
         wr2[j, 7, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
 
     windows = np.array(windows)
-    dpath = '/home/akumar/nse/neural_control/data/biasvariance_vst2'
+    dpath = '/home/akumar/nse/neural_control/data/biasvariance_vst3'
     #dpath = '/mnt/sdb1/nc_data/decodingvt'
     with open('%s/didx%d_rank%d.dat' % (dpath, didx, comm.rank), 'wb') as f:
         f.write(pickle.dumps(bias))

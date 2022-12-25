@@ -2,6 +2,24 @@ import numpy as np
 import scipy
 import pdb
 
+# Form a companion matrix from the autoregressive matrices
+def form_companion(w, u=None):
+    order = w.shape[0]
+    size = w.shape[1]
+    I = np.eye(size * (order - 1))
+    wcomp = np.block([list(w), [I, np.zeros((size * (order - 1), size))]])
+
+    if u is not None:
+        ucomp = [[u]]
+        for i in range(order - 1):
+            ucomp.append([np.zeros((size, size))])
+        ucomp = np.block(ucomp)
+
+        return wcomp, ucomp
+    else:
+        return wcomp
+
+
 # Calculate loadings 
 # U: matrix of shape (n_neurons * order, dim)
 # d: order of model
@@ -57,7 +75,7 @@ def filter_by_dict(df, root_key, dict_filter):
     return df.iloc[filtered_idxs]
 
 # Shortcut to apply multiple filters to pandas dataframe
-def apply_df_filters(dtfrm, invert=False, **kwargs):
+def apply_df_filters(dtfrm, invert=False, reset_index=True, **kwargs):
 
     filtered_df = dtfrm
 
@@ -70,10 +88,16 @@ def apply_df_filters(dtfrm, invert=False, **kwargs):
 
         else:
             if type(value) == list:
-                if invert:
-                    filtered_df = filtered_df.loc[np.invert(filtered_df[key].isin(value))]
-                else:
-                    filtered_df = filtered_df.loc[filtered_df[key].isin(value)]
+                matching_idxs = []
+                for v in value:
+                    df_ = apply_df_filters(filtered_df, reset_index=False, **{key:v})
+                    if invert:
+                        matching_idxs.extend(list(np.setdiff1d(np.arange(filtered_df.shape[0]), list(df_.index))))
+                    else:
+                        matchings_idxs = matching_idxs.extend(list(df_.index))
+
+                filtered_df = filtered_df.iloc[matching_idxs]
+        
             elif type(value) == str:
                 filtered_df = filtered_df.loc[[value in s for s in filtered_df[key].values]]
             else:
@@ -81,6 +105,9 @@ def apply_df_filters(dtfrm, invert=False, **kwargs):
                     filtered_df = filtered_df.loc[filtered_df[key] != value]
                 else:
                     filtered_df = filtered_df.loc[filtered_df[key] == value]
+        
+        if reset_index:
+            filtered_df.reset_index(inplace=True, drop=True)
 
         # if filtered_df.shape[0] == 0:
         #     print('Key %s reduced size to 0!' % key)

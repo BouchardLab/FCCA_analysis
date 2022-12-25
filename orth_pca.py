@@ -89,4 +89,3 @@ class OrthPCA():
         var_fraction2 = np.trace(V2.T @ Sigma2 @ V2)/np.trace(Sigma2)
 
         return V1, V2, score, var_fraction1, var_fraction2 
-

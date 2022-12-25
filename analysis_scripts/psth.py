@@ -250,8 +250,7 @@ def PSTH_plot(top_neurons_df, path):
         valid_transitions = np.arange(t.size)[t >= T]
 
         # (Bin size 50 ms)
-        time = 40 * np.arange(T)
-
+        time = 50 * np.arange(T)
         for i in range(2):
             for j in range(n):
                 tn = df_.iloc[0]['top_neurons'][i, j]    
@@ -263,27 +262,43 @@ def PSTH_plot(top_neurons_df, path):
                 
                 # Mean subtract
     #            x_ -= np.mean(x_, axis=1, keepdims=True)
-                try:
-                    x_ = StandardScaler().fit_transform(x_.T).T
-                    x_ = gaussian_filter1d(x_, sigma=2)
-                    x_ = np.mean(x_, axis=0)
+                x_ = gaussian_filter1d(x_, sigma=2)
+                x_ = StandardScaler().fit_transform(x_.T).T
+                x_ = np.mean(x_, axis=0)
 
-                    if i == 0:
-                        ax[2 * (h//7) + i, h % 7].plot(time, x_, 'k', alpha=0.5)
-                        ax[2 * (h//7) + i, h % 7].set_title(data_file)
+                if i == 0:
+                    ax[2 * (h//7) + i, h % 7].plot(time, x_, 'r', alpha=0.5, linewidth=3)
+                #    ax[2 * (h//7) + i, h % 7].set_title(data_file)
 
-                    if i == 1:
-                        ax[2 * (h//7) + i, h % 7].plot(time, x_, 'r', alpha=0.5)
-                        ax[2 * (h//7) + i, h % 7].set_title(data_file)
-                except:
-                    continue
+                if i == 1:
+                    ax[2 * (h//7) + i, h % 7].plot(time, x_, 'k', alpha=0.5, linewidth=3)
+                #    ax[2 * (h//7) + i, h % 7].set_title(data_file)
+
+
+                a = ax[2 * (h//7) + i, h % 7]
+                #ax.spines['left'].set_position('center')
+                a.spines['bottom'].set_position('center')
+
+                # Eliminate upper and right axes
+                a.spines['right'].set_color('none')
+                a.spines['top'].set_color('none')
+
+                # Show ticks in the left and lower axes only
+                a.xaxis.set_ticks_position('bottom')
+                a.yaxis.set_ticks_position('left')
+                a.set_xticks([0, 1500])
+                a.set_xticklabels([])
+                a.set_yticks([-1, 0, 1])
+                a.tick_params(axis='both', labelsize=16)
 
     for i in range(ndf):
+        pass
         #ax[0, i].set_title('Top FCCA neurons', fontsize=14)
         #ax[1, i].set_title('Top PCA neurons', fontsize=14)
-        ax[1, i].set_xlabel('Time (ms)')
-        ax[0, i].set_ylabel('Z-scored trial averaged firing rate')
+        #ax[1, i].set_xlabel('Time (ms)')
+        #ax[0, i].set_ylabel('Z-scored trial averaged firing rate')
 
+    fig.tight_layout()
     fig.savefig('%s/PSTH.pdf' % path, bbox_inches='tight', pad_inches=0)
 
 def cross_cov_calc(top_neurons_df):
@@ -527,7 +542,7 @@ if __name__ == '__main__':
     globals()['bin_width'] = bin_width
 
     # Load dimreduc_df
-    with open('/home/akumar/nse/neural_control/data/indy_decoding_df2.dat', 'rb') as f:
+    with open('/mnt/Secondary/data/postprocessed/indy_decoding_df2.dat', 'rb') as f:
         dimreduc_df = pd.DataFrame(pickle.load(f))
     # with open('/home/akumar/nse/neural_control/data/loco_decoding_norm.dat', 'rb') as f:
     #     dimreduc_df = pd.DataFrame(pickle.load(f))
@@ -538,9 +553,9 @@ if __name__ == '__main__':
 
     # Get top neurons
     top_neurons_df = get_top_neurons(dimreduc_df, method1=method1, method2=method2, n=10, pairwise_exclude=True)
-    heatmap_plot(top_neurons_df, figpath)
+    #heatmap_plot(top_neurons_df, figpath)
     # Plot PSTH
-    # PSTH_plot(top_neurons_df, figpath)
+    PSTH_plot(top_neurons_df, figpath)
 
     # PI = single_unit_PI(top_neurons_df)
 

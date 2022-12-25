@@ -262,7 +262,6 @@ def cleanup_decoding(root_dir, job_name, complete=True,
     for argfile in argfiles:
 
         jobno = int(argfile.split('/')[-1].split('arg')[-1].split('.')[0])
-
         jobdir = '%s/%s_%d' % (root_dir, job_name, jobno)
 
         # Load args and check if the job was completed
@@ -276,7 +275,6 @@ def cleanup_decoding(root_dir, job_name, complete=True,
         dr_argfile_path = '%s/arg%d.dat' % (dimreduc_path, dimreduc_fileno)
 
         dimreduc_file = '%s/%s' % (dimreduc_path, dimreduc_file.split('/')[-1])
-
         # Load the dr_argfile and get the name of the original data file
         with open(dr_argfile_path, 'rb') as f:
             dr_args = pickle.load(f)
@@ -287,15 +285,14 @@ def cleanup_decoding(root_dir, job_name, complete=True,
         # Get dim_vals and n_folds
         dim_vals = dr_args['task_args']['dim_vals']
         n_folds = dr_args['task_args']['n_folds']
-        dimreduc_methods = args['task_args']['dimreduc_methods']
-        decoders = args['task_args']['decoders']
+        dimreduc_methods = dr_args['task_args']['dimreduc_method']
+        decoders = args['task_args']['decoder']['method']
 
         # Expected output files
-        outputs = itertools.product(dim_vals, np.arange(n_folds), dimreduc_methods, decoders)
-        expected_files = ['dim_%d_fold_%d_%s_%s.dat' % tup for tup in outputs]
+        outputs = itertools.product(dim_vals, np.arange(n_folds))
+        expected_files = ['dim_%d_fold_%d.dat' % tup for tup in outputs]
         data_files = glob.glob('%s/*.dat' % jobdir)
         found_files = [file.split('/')[-1] for file in data_files]
-
         to_do[jobno] = []
         for expected_file in expected_files:
             if expected_file not in found_files:
@@ -306,19 +303,25 @@ def cleanup_decoding(root_dir, job_name, complete=True,
             results_dict_list = []
             for data_file in data_files:
                 with open(data_file, 'rb') as f:
-                    results_dict = pickle.load(f)
+                    try:
+                        results_dict = pickle.load(f)
+                    except:
+                        print('Pickle Load Failed!')
+                        to_do[jobno].append(data_file)
+                        continue
 
                 results_dict['data_file'] = original_data_file
                 # Add preprocessing parameters
                 for key, value in dr_args['loader_args'].items():
                     results_dict[key] = value
-                for key, value in args['task_args']['decoder_args'].items():
+                for key, value in args['task_args']['decoder']['args'].items():
                     results_dict[key] = value
  
                 results_dict_list.append(results_dict)
 
-            with open(results_file, 'wb') as f:
-                pickle.dump(results_dict_list, f, protocol=-1)
+            if to_do[jobno] == 0:
+                with open(results_file, 'wb') as f:
+                    pickle.dump(results_dict_list, f, protocol=-1)
 
         elif complete:
 

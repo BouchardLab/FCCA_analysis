@@ -67,5 +67,4 @@ if __name__ == '__main__':
         args = pickle.load(f)
 
     #######################################
-    # If provided a list of arguments, call main for each entry
     main(args)

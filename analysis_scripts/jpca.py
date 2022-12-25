@@ -71,7 +71,7 @@ if __name__ == '__main__':
     data_files = np.unique(sabes_df['data_file'].values)
     dpath = '/mnt/Secondary/data/sabes'
 
-    DIM = 10
+    DIM = 6
     if not os.path.exists('jpcaAtmp.dat'):
         # Now do subspace identification/VAR inference within these 
         # results = []
@@ -137,19 +137,19 @@ if __name__ == '__main__':
 
                 # x = np.array([StandardScaler().fit_transform(dat['spike_rates'][j, ...]) 
                 #             for j in range(dat['spike_rates'].shape[0])])
+                yproj = StandardScaler().fit_transform(yproj)
+
                 jpca = JPCA(n_components=DIM, mean_subtract=False)
                 jpca.fit(yproj[np.newaxis, ...])
                 
                 linmodel = LinearRegression()
                 linmodel.fit(yproj[:-1, :], np.diff(yproj, axis=0))
 
-                ypred = np.array([y @ jpca.M_skew for y in yproj]) 
-
-                r2_jpca = r2_score(yproj, ypred)
+                ypred = yproj[:-1, :] @ jpca.M_skew
+                r2_jpca = jpca.r2_score
                 r2_linear = linmodel.score(yproj[:-1, :], np.diff(yproj, axis=0))
-
                 print('method: %s, r2_jpca: %f, r2_lin: %f' % (dimreduc_method, r2_jpca, r2_linear))
-                result_['jeig'] = jpca.eigen_vals_
+                result_['jeig'] = np.imag(np.linalg.eigvals(linmodel.coef_))
                 resultsd3.append(result_)
 
 

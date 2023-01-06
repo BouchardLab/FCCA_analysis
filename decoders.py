@@ -264,6 +264,7 @@ def _draw_bootstrap_sample(rng, X, y):
     )
     return X[bootstrap_indices], y[bootstrap_indices]
 
+
 def lr_bias_variance(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=1, n_boots=200, random_seed=None):
 
     if random_seed is None:
@@ -294,7 +295,9 @@ def lr_bias_variance(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_w
     var = np.mean(np.mean(np.power(zpred_boot - Ezpred, 2), axis=1), axis=0)
     return mse, bias, var
 
-def lr_bv_windowed(X, Z, lag, window, transition_times, train_idxs, test_idxs, pkassign=None, apply_pk_to_train=False, 
+#*** Assumes that Z already has dimension 6**** (hence includevelocity/acc is set to FALSE)#
+# This also means that the transition times and pkassign indices correspond to Z having been passed through expnad state space #
+def lr_bv_windowed(X, Z, lag, train_windows, test_windows, transition_times, train_idxs, test_idxs, pkassign=None, apply_pk_to_train=False, 
                    decoding_window=1, n_boots=200, random_seed=None, offsets=None):
 
     if random_seed is None:
@@ -302,12 +305,7 @@ def lr_bv_windowed(X, Z, lag, window, transition_times, train_idxs, test_idxs, p
     else:
         rand = np.random.RandomState(random_seed)
 
-    # We have been given a list of windows for each transition
-    if len(window) > 2:
-        W = [w for win in window for w in win]
-        win_min = min(W)
-    else:
-        win_min = window[0]
+    win_min = train_windows[0][0]
 
     if win_min >= 0:
         win_min = 0
@@ -329,9 +327,9 @@ def lr_bv_windowed(X, Z, lag, window, transition_times, train_idxs, test_idxs, p
         assert(np.all([s.size == np.arange(t[0], t[1]).size for (s, t) in zip(pkassign[train_idxs], tt_train)]))
         subset_selection = [np.argwhere(np.array(s) == 0).squeeze() for s in pkassign[train_idxs]]
 
-        Xtrain, Ztrain = apply_window(X, Z, lag, window, tt_train, decoding_window, True, True, False, subset_selection, offsets=offsets_train)
+        Xtrain, Ztrain = apply_window(X, Z, lag, train_windows, tt_train, decoding_window, False, False, subset_selection, offsets=offsets_train)
     else:
-        Xtrain, Ztrain = apply_window(X, Z, lag, window, tt_train, decoding_window, True, True, False, offsets=offsets_train)
+        Xtrain, Ztrain = apply_window(X, Z, lag, train_windows, tt_train, decoding_window, False, False, offsets=offsets_train)
 
     # Filter out by transitions that lie within the test idxs, and stay clear of the start and end
     tt_test = [(t, idx) for idx, t in enumerate(transition_times) 
@@ -347,9 +345,9 @@ def lr_bv_windowed(X, Z, lag, window, transition_times, train_idxs, test_idxs, p
     if pkassign is not None:
         assert(np.all([s.size == np.arange(t[0], t[1]).size for (s, t) in zip(pkassign[test_idxs], tt_test)]))
         subset_selection = [np.argwhere(np.array(s) != 0).squeeze() for s in pkassign[test_idxs]]
-        Xtest, Ztest = apply_window(X, Z, lag, window, tt_test, decoding_window, True, True, False, subset_selection, offsets=offsets_test)
+        Xtest, Ztest = apply_window(X, Z, lag, test_windows, tt_test, decoding_window, False, False, subset_selection, offsets=offsets_test)
     else:
-        Xtest, Ztest = apply_window(X, Z, lag, window, tt_test, decoding_window, True, True, False, offsets=offsets_test)
+        Xtest, Ztest = apply_window(X, Z, lag, test_windows, tt_test, decoding_window, False, False, offsets=offsets_test)
 
     num_test_reaches = len(Xtest)
 
@@ -365,9 +363,9 @@ def lr_bv_windowed(X, Z, lag, window, transition_times, train_idxs, test_idxs, p
         Ztest = np.concatenate(Ztest)
 
         Xtrain = StandardScaler().fit_transform(Xtrain)
-        Ztrain = StandardScaler().fit_transform(Ztrain)
+        #Ztrain = StandardScaler().fit_transform(Ztrain)
         Xtest = StandardScaler().fit_transform(Xtest)
-        Ztest = StandardScaler().fit_transform(Ztest)
+        #Ztest = StandardScaler().fit_transform(Ztest)
 
         # Run lr_decoder over bootstrapped samples of xtrain and xtest. Use this to calculate bias and variance of the estimator
         zpred_boot = []
@@ -394,7 +392,10 @@ def lr_bv_windowed(X, Z, lag, window, transition_times, train_idxs, test_idxs, p
         return np.nan, np.nan, np.nan, num_test_reaches
 
 
-def apply_window(X, Z, lag, window, transition_times, decoding_window, include_velocity, include_acc, measure_from_end, subset_selection=None, offsets=None):
+def apply_window(X, Z, lag, window, transition_times, decoding_window, include_velocity, include_acc, 
+                 subset_selection=None, offsets=None, return_valid_indices=False):
+    # Update 12/15: We allow for multiple windows for each transition time, so we can train the decoder across pooled sections
+    # of the reach
 
     # subset_selection: set of indices of the same length as transition_times that indicate whether a subset of the transition
     # is to be included. This is used when we enforce peak membership in decoding.
@@ -404,19 +405,31 @@ def apply_window(X, Z, lag, window, transition_times, decoding_window, include_v
     Z = Z[decoding_window//2:, :]
     Z = Z[:X.shape[0], :]
 
-    # This *also* requires shifting the transition times, as behavior will have been affected
-    if decoding_window > 1:
-        transition_times = [(t[0] - decoding_window//2, t[1] - decoding_window//2) for t in transition_times]        
-
-    assert(X.shape[0] == Z.shape[0])
-
     # Expand state space to include velocity and acceleration
     if np.any([include_velocity, include_acc]):
         Z, X = expand_state_space([Z], [X], include_velocity, include_acc)
 
-    # Flatten list structure imposed by expand_state_space
-    Z = Z[0]
-    X= X[0]
+        # Flatten list structure imposed by expand_state_space
+        Z = Z[0]
+        X= X[0]
+
+    # This *also* requires shifting the transition times, as behavior will have been affected
+    # There is a shift due to the formation of the lag matrix *and* the expansion of the state sapce, 
+    # which will cut off the first 2 sample points, if include_acc is set to true
+
+    if decoding_window > 1:
+        transition_times = [(t[0] - decoding_window//2, t[1] - decoding_window//2) for t in transition_times]        
+    try:
+        assert(X.shape[0] == Z.shape[0])
+    except:
+        pdb.set_trace()
+
+    if include_acc:
+        transition_times = [(t[0] - 2, t[1] - 2) for t in transition_times]
+    elif include_velocity:
+        transition_times = [(t[0] - 1, t[1] - 1) for t in transition_times]
+
+    # We assume that the subset indices have already been shifted (this is the case in biasvariance_vst)
 
     # Segment the time series with respect to the transition times (including lag)
     xx = []
@@ -424,38 +437,17 @@ def apply_window(X, Z, lag, window, transition_times, decoding_window, include_v
 
     valid_idxs = []
 
-    def valid_reach(t0, t1, w, measure_from_end):
-        if measure_from_end:
-            window_in_reach = t1 - w[1] > t0
-        else:
-            window_in_reach = t0 + w[1] < t1
-        return window_in_reach
-
     # If given a single window, duplicate it across all transition times
-    if len(window) == 2:
+    if len(window) != len(transition_times):
         window = [window for _ in range(len(transition_times))]
 
     # If no offsets provided, let it be 0 for all transition times
     if offsets is None:
         offsets = np.zeros(len(transition_times))
 
-    print('Initial reach count: %d' % len(transition_times))
     for i, (t0, t1) in enumerate(transition_times):
-        # Enforce that the previous reach must not have began after the window begins
-        # UPDATE: no longer used, see the code block below
-        # try:
-        #     assert(valid_reach(t0,  t1, window[i], measure_from_end))
-        # except:
-        #     pdb.set_trace()
-        if measure_from_end:
-            if subset_selection is not None:
-                raise ValueError('Not supported for measuring from end')
-            if offsets[i] != 0:
-                raise ValueError('Not supported for measuring from end')
-            xx_ = X[t1 - lag - window[i][1]:t1 - lag - window[i][0]]
-            zz_ = Z[t1 - window[i][1]:t1 - window[i][0]]
-        else:
-            window_indices = np.arange(t0 + window[i][0] + offsets[i], t0 + window[i][1] + offsets[i])
+        for j, win in enumerate(window[i]):
+            window_indices = np.arange(t0 + win[0] + offsets[i], t0 + win[1] + offsets[i])
             if subset_selection is not None:
                 # Select only indices that do not belong to the first velocity peak
                 subset_indices = np.arange(t0, t1)[subset_selection[i]]
@@ -475,26 +467,26 @@ def apply_window(X, Z, lag, window, transition_times, decoding_window, include_v
             window_indices -= lag
             xx_ = X[window_indices]
 
-        if len(xx_) > 0:
-            assert(xx_.shape[0] == zz_.shape[0])
-            xx.append(xx_)
-            zz.append(zz_)
 
-    print('Final reach count: %d' % len(zz))
+            if len(xx_) > 0:
+                assert(xx_.shape[0] == zz_.shape[0])
+                xx.append(xx_)
+                zz.append(zz_)
+                valid_idxs.append(i)
 
-    return xx, zz
+    if return_valid_indices:
+        return xx, zz, valid_idxs
+    else:
+        return xx, zz
 
-def lr_decode_windowed(X, Z, lag, window, transition_times, train_idxs, test_idxs=None, 
-                       decoding_window=1, include_velocity=True, include_acc=True, measure_from_end=False, pkassign=None, apply_pk_to_train=False, offsets=None):
+def lr_decode_windowed(X, Z, lag, train_windows, test_windows, transition_times, train_idxs, test_idxs=None, 
+                       decoding_window=1, include_velocity=True, include_acc=True, 
+                       pkassign=None, apply_pk_to_train=False, offsets=None):
 
     behavior_dim = Z.shape[-1]
 
-    # We have been given a list of windows for each transition
-    if len(window) > 2:
-        W = [w for win in window for w in win]
-        win_min = min(W)
-    else:
-        win_min = window[0]
+    # We have been given a list (of list) of windows for each transition
+    win_min = train_windows[0][0]
 
     if win_min >= 0:
         win_min = 0
@@ -515,9 +507,9 @@ def lr_decode_windowed(X, Z, lag, window, transition_times, train_idxs, test_idx
         # Train on the first velocity peak only
         assert(np.all([s.size == np.arange(t[0], t[1]).size for (s, t) in zip(pkassign[train_idxs], tt_train)]))
         subset_selection = [np.argwhere(np.array(s) == 0).squeeze() for s in pkassign[train_idxs]]
-        Xtrain, Ztrain = apply_window(X, Z, lag, window, tt_train, decoding_window, include_velocity, include_acc, measure_from_end, subset_selection, offsets=offsets_train)
+        Xtrain, Ztrain = apply_window(X, Z, lag, train_windows, tt_train, decoding_window, include_velocity, include_acc, subset_selection, offsets=offsets_train)
     else:
-        Xtrain, Ztrain = apply_window(X, Z, lag, window, tt_train, decoding_window, include_velocity, include_acc, measure_from_end, offsets=offsets_train)
+        Xtrain, Ztrain = apply_window(X, Z, lag, train_windows, tt_train, decoding_window, include_velocity, include_acc, offsets=offsets_train)
 
     if Xtrain is None:
         return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, None, 0
@@ -541,9 +533,9 @@ def lr_decode_windowed(X, Z, lag, window, transition_times, train_idxs, test_idx
         if pkassign is not None:
             assert(np.all([s.size == np.arange(t[0], t[1]).size for (s, t) in zip(pkassign[test_idxs], tt_test)]))
             subset_selection = [np.argwhere(np.array(s) != 0).squeeze() for s in pkassign[test_idxs]]
-            Xtest, Ztest = apply_window(X, Z, lag, window, tt_test, decoding_window, include_velocity, include_acc, measure_from_end, subset_selection, offsets=offsets_test)        
+            Xtest, Ztest = apply_window(X, Z, lag, test_windows, tt_test, decoding_window, include_velocity, include_acc, subset_selection, offsets=offsets_test)        
         else:
-            Xtest, Ztest = apply_window(X, Z, lag, window, tt_test, decoding_window, include_velocity, include_acc, measure_from_end, offsets=offsets_test)
+            Xtest, Ztest = apply_window(X, Z, lag, test_windows, tt_test, decoding_window, include_velocity, include_acc, offsets=offsets_test)
 
     else:
         Xtest = None

@@ -92,7 +92,7 @@ def measure_straight_dev(trajectory, start, end):
     straight_dev /= straight_norm
     return straight_dev
 
-def reach_segment_sabes(dat, start_time=None, data_file=None, keep_high_error=False):
+def reach_segment_sabes(dat, start_time=None, data_file=None, keep_high_error=False, err_thresh=0.9):
     print('Reminder that start times depend on the bin size')
     if start_time is None:
         start_time = start_times[data_file]
@@ -164,7 +164,7 @@ def reach_segment_sabes(dat, start_time=None, data_file=None, keep_high_error=Fa
                                          np.mean(np.linalg.norm(cursor_1 - target_locs[target_pairs[i][1]]))])
 
     # Thresholding by error threshold (how far from the start and end targets is the reach)
-    err_thresh = np.quantile(target_error_pairs, 0.9)
+    err_thresh = np.quantile(target_error_pairs, err_thresh)
 
     # Throw away trajectories with highly erratic velocity profiles
     # (large number of zero crossings in the acceleration)
@@ -186,7 +186,7 @@ def reach_segment_sabes(dat, start_time=None, data_file=None, keep_high_error=Fa
 
     indices_kept = []
 
-    for i in range(len(target_error_pairs)):        
+    for i in range(len(target_error_pairs)): 
         # Keep this transition
         if (target_error_pairs[i] < err_thresh and n_zeros[i] < 200) or keep_high_error:
             valid_target_pairs.append((target_locs[target_pairs[i][0]], target_locs[target_pairs[i][1]]))        

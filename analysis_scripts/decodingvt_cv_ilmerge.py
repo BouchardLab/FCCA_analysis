@@ -285,6 +285,7 @@ if __name__ == '__main__':
     # Distribute windows across ranks
     windows = np.array_split(windows, comm.size)[comm.rank]
     wr2 = np.zeros((len(windows), 5, 2, 6))
+    ntr = np.zeros((len(windows), 5, 2))
 
     # Apply projection
 
@@ -298,15 +299,15 @@ if __name__ == '__main__':
             tt_train_idxs = [idx for idx in range(len(transition_times)) if transition_times[idx][0] in train_idxs and transition_times[idx][1] in train_idxs]
             tt_test_idxs = [idx for idx in range(len(transition_times)) if transition_times[idx][0] in test_idxs and transition_times[idx][1] in test_idxs]
 
-            r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete,  _ = lr_decode_windowed(xpca, Z, lag, window, transition_times, train_idxs=tt_train_idxs,
-                                                                                                test_idxs=tt_test_idxs, decoding_window=decoding_window, measure_from_end=measure_from_end) 
+            r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete,  _, ntr = lr_decode_windowed(xpca, Z, lag, [window], [window], transition_times, train_idxs=tt_train_idxs,
+                                                                                                test_idxs=tt_test_idxs, decoding_window=decoding_window) 
             wr2[j, fold, 0, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
-            r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete,  _ = lr_decode_windowed(xfcca, Z, lag, window, transition_times, train_idxs=tt_train_idxs,
-                                                                                            test_idxs=tt_test_idxs, decoding_window=decoding_window, measure_from_end=measure_from_end)
+            r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete,  _, ntr = lr_decode_windowed(xfcca, Z, lag, [window], [window], transition_times, train_idxs=tt_train_idxs,
+                                                                                            test_idxs=tt_test_idxs, decoding_window=decoding_window)
             wr2[j, fold, 1, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
 
     windows = np.array(windows)
-    dpath = '/home/akumar/nse/neural_control/data/decodingvt_cv_ilmerge3'
+    dpath = '/home/akumar/nse/neural_control/data/decodingvt_cv_ttshift'
     #dpath = '/mnt/sdb1/nc_data/decodingvt'
     with open('%s/didx%d_rank%d_%s_%d.dat' % (dpath, didx, comm.rank, filter_string, measure_from_end), 'wb') as f:
         f.write(pickle.dumps(wr2))
@@ -315,4 +316,3 @@ if __name__ == '__main__':
         f.write(pickle.dumps(window_filter))
         f.write(pickle.dumps(windows))
         f.write(pickle.dumps(filter_params))
-        

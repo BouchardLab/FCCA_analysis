@@ -96,6 +96,8 @@ if __name__ == '__main__':
         resultsd3 = []
         for i, data_file in tqdm(enumerate(data_files)):
             dat = load_sabes('%s/%s' % (dpath, data_file))
+            dat = reach_segment_sabes(dat, data_file=data_file.split('.mat')[0])
+
             y = np.squeeze(dat['spike_rates'])
             for dimreduc_method in ['LQGCA', 'PCA']:
                 df_ = apply_df_filters(sabes_df, data_file=data_file, fold_idx=0, dim=DIM, dimreduc_method=dimreduc_method)
@@ -110,6 +112,8 @@ if __name__ == '__main__':
                 # Project data
                 yproj = y @ V
 
+                # Segment reaches into minimum length 30 timesteps reaches
+                yproj = np.array([yproj[t0:t0+20] for t0, t1 in dat['transition_times'] if t1 - t0 > 21])
                 # yproj = gaussian_filter1d(yproj, sigma=5)
 
                 result_ = {}
@@ -157,25 +161,26 @@ if __name__ == '__main__':
 
                 # x = np.array([StandardScaler().fit_transform(dat['spike_rates'][j, ...]) 
                 #             for j in range(dat['spike_rates'].shape[0])])
-                yproj = StandardScaler().fit_transform(yproj)
+                #yproj = StandardScaler().fit_transform(yproj)
                 jpca = JPCA(n_components=DIM, mean_subtract=False)
-                jpca.fit(yproj[np.newaxis, ...])
+                jpca.fit(yproj)
                 
-                linmodel = LinearRegression()
-                linmodel.fit(yproj[:-1, :], np.diff(yproj, axis=0))
+                #linmodel = LinearRegression()
+                #linmodel.fit(yproj[:-1, :], np.diff(yproj, axis=0))
 
                 ypred = yproj[:-1, :] @ jpca.M_skew
                 r2_jpca = jpca.r2_score
-                r2_linear = linmodel.score(yproj[:-1, :], np.diff(yproj, axis=0))
+                #r2_linear = linmodel.score(yproj[:-1, :], np.diff(yproj, axis=0))
+                r2_linear = np.nan
                 print('method: %s, r2_jpca: %f, r2_lin: %f' % (dimreduc_method, r2_jpca, r2_linear))
-                result_['jeig'] = np.imag(np.linalg.eigvals(linmodel.coef_))
+                result_['jeig'] = jpca.eigen_vals_
                 resultsd3.append(result_)
 
 
-        with open('jpcaAtmp_il.dat', 'wb') as f:
+        with open('jpcaAtmp_il_trialized.dat', 'wb') as f:
             f.write(pickle.dumps(resultsd3))            
     else:
-        with open('jpcaAtmp_il.dat', 'rb') as f:
+        with open('jpcaAtmp_il_trialized.dat', 'rb') as f:
             resultsd3 = pickle.load(f)
 
     A_df = pd.DataFrame(resultsd3)
@@ -216,7 +221,9 @@ if __name__ == '__main__':
 
     # Next up:
     # Rotational trajectories.
-    data_file = data_files[20]
+    
+    # (5., 7., 10., 12.. 16. 17. 19. 20. 25..)
+    data_file = data_files[25]
 
     df1 = apply_df_filters(sabes_df, data_file=data_file, fold_idx=0, dim=6, dimreduc_method='PCA')
     df2 = apply_df_filters(sabes_df, data_file=data_file, fold_idx=0, dim=6, dimreduc_method='LQGCA', 
@@ -227,8 +234,9 @@ if __name__ == '__main__':
     dat = load_sabes('%s/%s' % (datpath, data_file))
     dat = reach_segment_sabes(dat, data_file=data_file.split('.mat')[0])
 
-    x = np.array([StandardScaler().fit_transform(dat['spike_rates'][j, ...]) 
-                for j in range(dat['spike_rates'].shape[0])])
+    # x = np.array([StandardScaler().fit_transform(dat['spike_rates'][j, ...]) 
+    #             for j in range(dat['spike_rates'].shape[0])])
+    x = dat['spike_rates']
     xpca = x @ df1.iloc[0]['coef'][:, 0:6]
     xdca = x @ df2.iloc[0]['coef']
 
@@ -250,6 +258,8 @@ if __name__ == '__main__':
         
         trajectory = gaussian_filter1d(xpca_j[0, transition_times[i][0]:transition_times[i][1]], 
                                     sigma=5, axis=0)
+        trajectory -= trajectory[0]
+        
         start = trajectory[0, :]
         end = trajectory[-1, :]
         
@@ -257,6 +267,8 @@ if __name__ == '__main__':
 
         trajectory = gaussian_filter1d(xdca_j[0, transition_times[i][0]:transition_times[i][1]], 
                                     sigma=5, axis=0)
+        trajectory -= trajectory[0]
+        
         start = trajectory[0, :]
         end = trajectory[-1, :]
         dca_straightdev[i] = measure_straight_dev(trajectory, start, end)
@@ -273,18 +285,18 @@ if __name__ == '__main__':
 
     for i in range(0, 25):
         
-        idx = pca_devorder[i]
+        idx = dca_devorder[i]
 
         # Plot only 20 timesteps
         t0 = transition_times[idx][0]
         t1 = min(transition_times[idx][0] + 40, transition_times[idx][1])
 
         trajectory = gaussian_filter1d(xpca_j[0, t0:t1], 
-                                    sigma=5, axis=0)
+                                    sigma=5, axis=0)[:-3]
 
         # Center and normalize trajectories
         trajectory -= trajectory[0]
-        trajectory /= np.linalg.norm(trajectory)
+        #trajectory /= np.linalg.norm(trajectory)
 
         # Rotate trajectory so that the first 5 timesteps all go off at the same angle
         theta0 = np.arctan2(trajectory[15, 1], trajectory[15, 0])
@@ -297,17 +309,17 @@ if __name__ == '__main__':
         ax[0].plot(trajectory[:, 0], trajectory[:, 1], 'k', alpha=0.5)
         ax[0].arrow(trajectory[-1, 0], trajectory[-1, 1], 
                     trajectory[-1, 0] - trajectory[-2, 0], trajectory[-1, 1] - trajectory[-2, 1], 
-                    head_width=0.005, color="k", alpha=0.5)
+                    head_width=0.08, color="k", alpha=0.5)
         
         
         idx = dca_devorder[i]
         t0 = transition_times[idx][0]
         t1 = min(transition_times[idx][0] + 40, transition_times[idx][1])
-        trajectory = gaussian_filter1d(xdca_j[0, t0:t1], sigma=5, axis=0)
+        trajectory = gaussian_filter1d(xdca_j[0, t0:t1], sigma=5, axis=0)[:-3]
 
         # Center trajectories
         trajectory -= trajectory[0]
-        trajectory /= np.linalg.norm(trajectory)
+        #trajectory /= np.linalg.norm(trajectory)
 
         # Rotate trajectory so that the first 5 timesteps all go off at the same angle
         theta0 = np.arctan2(trajectory[15, 1], trajectory[15, 0])
@@ -317,19 +329,21 @@ if __name__ == '__main__':
         ax[1].plot(trajectory[:, 0], trajectory[:, 1], '#c73d34', alpha=0.5)
         ax[1].arrow(trajectory[-1, 0], trajectory[-1, 1], 
                     trajectory[-1, 0] - trajectory[-2, 0], trajectory[-1, 1] - trajectory[-2, 1], 
-                    head_width=0.005, color="#c73d34", alpha=0.5)
+                    head_width=0.05, color="#c73d34", alpha=0.5)
 
-        ax[0].set_xticklabels([])
-        ax[0].set_yticklabels([])
-        
-        ax[1].set_xticklabels([])
-        ax[1].set_yticklabels([])
-        
-    ax[0].set_xlim([-0.3, 0.3])
-    ax[1].set_xlim([-0.3, 0.3])
+    ax[0].set_xticklabels([])
+    ax[0].set_yticklabels([])
+    
+    ax[1].set_xticklabels([])
+    ax[1].set_yticklabels([])
 
-    ax[0].set_ylim([-0.3, 0.3])
-    ax[1].set_ylim([-0.3, 0.3])
+    ax[0].set_aspect('equal')   
+    ax[1].set_aspect('equal')
+    ax[0].set_xlim([-2.2, 3.5])
+    ax[0].set_ylim([-2.2, 3.5])
+
+    ax[1].set_xlim([-1.2, 2.2])
+    ax[1].set_ylim([-1.2, 2.2])
 
     ax[0].set_title('jPCA on PCA', fontsize=14)
     ax[0].set_ylabel('jPC2', fontsize=14)
@@ -345,13 +359,15 @@ if __name__ == '__main__':
     ax[0].spines['bottom'].set_color('none')
     ax[0].set_xticks([])
     ax[0].set_yticks([])
+    ax[1].set_xticks([])
+    ax[1].set_yticks([])
 
     ax[1].spines['right'].set_color('none')
     ax[1].spines['top'].set_color('none')
     ax[1].spines['left'].set_color('none')
     ax[1].spines['bottom'].set_color('none')
-    ax[1].set_xticks([])
-    ax[1].set_yticks([])
+    # ax[1].set_xticks([])
+    # ax[1].set_yticks([])
     fig.tight_layout()
     fig.savefig('%s/trajectories.pdf' % figpath, bbox_inches='tight', pad_inches=0)
 
@@ -387,4 +403,4 @@ if __name__ == '__main__':
     # ax.set_xlim([13, 0])
 
     fig.tight_layout()
-    fig.savefig('%s/jpca_eig_bplot.pdf' % figpath, bbox_inches='tight', pad_inches=0)
+    fig.savefig('%s/jpca_eig_bplot_trialized.pdf' % figpath, bbox_inches='tight', pad_inches=0)

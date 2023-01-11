@@ -445,7 +445,7 @@ def box_plots(method1, method2, tau_max, mag, PI, stats, p, path):
 
     # Plot the histograms
     fig, ax = plt.subplots(6, 5, figsize=(25, 30))
-    for i in range(28):
+    for i in range(35):
         a = ax[np.unravel_index(i, (6, 5))]
         a.hist(tau_max[i, 0], alpha=0.5, bins=np.linspace(-1500, 1500, 25))
         a.hist(tau_max[i, 1], alpha=0.5)    
@@ -459,7 +459,7 @@ def box_plots(method1, method2, tau_max, mag, PI, stats, p, path):
 
     # Plot the histograms
     fig, ax = plt.subplots(6, 5, figsize=(25, 30))
-    for i in range(28):
+    for i in range(35):
         a = ax[np.unravel_index(i, (6, 5))]
         a.hist(mag[i, 0], alpha=0.5)
         a.hist(mag[i, 1], alpha=0.5)
@@ -543,7 +543,27 @@ if __name__ == '__main__':
 
     # Load dimreduc_df
     with open('/mnt/Secondary/data/postprocessed/indy_decoding_df2.dat', 'rb') as f:
-        dimreduc_df = pd.DataFrame(pickle.load(f))
+        indy_df = pd.DataFrame(pickle.load(f))
+
+    with open('/mnt/Secondary/data/postprocessed/loco_decoding_df.dat', 'rb') as f:
+        loco_df = pickle.load(f)
+    loco_df = pd.DataFrame(loco_df)
+    loco_df = apply_df_filters(loco_df,
+                            loader_args={'bin_width': 50, 'filter_fn': 'none', 'filter_kwargs': {}, 'boxcox': 0.5, 'spike_threshold': 100, 'region': 'M1'},
+                            decoder_args={'trainlag': 4, 'testlag': 4, 'decoding_window': 5})
+    good_loco_files = ['loco_20170210_03.mat',
+        'loco_20170213_02.mat',
+        'loco_20170215_02.mat',
+        'loco_20170227_04.mat',
+        'loco_20170228_02.mat',
+        'loco_20170301_05.mat',
+        'loco_20170302_02.mat']
+
+    loco_df = apply_df_filters(loco_df, data_file=good_loco_files)        
+
+    dimreduc_df = pd.concat([indy_df, loco_df])
+
+        
     # with open('/home/akumar/nse/neural_control/data/loco_decoding_norm.dat', 'rb') as f:
     #     dimreduc_df = pd.DataFrame(pickle.load(f))
 
@@ -555,17 +575,17 @@ if __name__ == '__main__':
     top_neurons_df = get_top_neurons(dimreduc_df, method1=method1, method2=method2, n=10, pairwise_exclude=True)
     #heatmap_plot(top_neurons_df, figpath)
     # Plot PSTH
-    PSTH_plot(top_neurons_df, figpath)
+    #PSTH_plot(top_neurons_df, figpath)
 
-    # PI = single_unit_PI(top_neurons_df)
+    PI = single_unit_PI(top_neurons_df)
 
     # Cross-covariance stuff
-    # cross_covs, cross_covs01 = cross_cov_calc(top_neurons_df)
-    # tau_max, mag, stats, p = cross_covs_statistics(cross_covs, cross_covs01)
-    # PI_stats, PI_p = PI_statistics(PI)
+    cross_covs, cross_covs01 = cross_cov_calc(top_neurons_df)
+    tau_max, mag, stats, p = cross_covs_statistics(cross_covs, cross_covs01)
+    PI_stats, PI_p = PI_statistics(PI)
     
-    # stats += PI_stats
-    # p += PI_p
+    stats += PI_stats
+    p += PI_p
 
-    # box_plots(method1, method2, tau_max, mag, PI, stats, p, figpath)
+    box_plots(method1, method2, tau_max, mag, PI, stats, p, figpath)
     

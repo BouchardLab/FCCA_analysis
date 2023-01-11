@@ -294,7 +294,7 @@ class PoolWorker():
 
         # X is either of shape (n_time, n_dof) or (n_trials,). In the latter case
         X = globals()['X']
-
+        print('X Dim: %d' % X.shape[1])
         # dim_val is too high
         dim_error = False
         if np.ndim(X) == 2:
@@ -400,6 +400,12 @@ class PoolWorker():
             Xtest = [xx @ coef_ for xx in Xtest]
             Ytrain = [yy for yy in Ytrain]
             Ytest = [yy for yy in Ytest]
+        print(X.shape)
+        print(coef_.shape)
+        print(Xtrain.shape)
+        print(Xtest.shape)
+        print(Ytrain.shape)
+        print(Ytest.shape)
 
         r2_pos, r2_vel, r2_acc, decoder_obj = DECODER_DICT[decoder['method']](Xtest, Xtrain, Ytest, Ytrain, **decoder['args'])
 

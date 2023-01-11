@@ -77,7 +77,7 @@ def consolidate_decoding(src_path, save_path, replacement_drpath=None):
 def consolidate_dimreduc(src_path, save_path):
     
     argfiles = glob.glob('%s/arg*.dat' % src_path)
-    
+    print(len(argfiles))
     result_list = []
     for argfile in argfiles:
 

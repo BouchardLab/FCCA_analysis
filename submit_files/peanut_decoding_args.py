@@ -6,7 +6,7 @@ import itertools
 #script_path = '/global/homes/a/akumar25/repos/localization/batch_analysis_sabes.py'
 script_path = '/home/akumar/nse/neural_control/batch_analysis.py'
 
-desc = 'Decode from peanut_dimreduc_norm'
+desc = 'Decode from peanut_dimreduc_initvar'
 #data_path = os.environ['SCRATCH'] + '/shenoy_split'
 data_path = '/mnt/Secondary/data/peanut'
 
@@ -23,15 +23,13 @@ analysis_type = 'decoding'
 loader_args = [[]]
 
 # Grab all the dimreduc files. 
-dimreduc_files = glob.glob('/mnt/Secondary/data/peanut_dimreduc_norm/peanut_dimreduc_norm*.dat')
+dimreduc_files = glob.glob('/mnt/Secondary/data/peanut_dimreduc_initvar/peanut_dimreduc_initvar*.dat')
 
 # Create separate set of task args for each dimreduc file and
 # each set of decoder_args. The rest of the iterables are handled
 # in parallel at execution
 
-decoders = [{'method': 'lr', 'args':{'trainlag': 0, 'testlag': 0, 'decoding_window':6}},
-			{'method': 'lr', 'args':{'trainlag': 3, 'testlag': 3, 'decoding_window':6}},
-			{'method': 'lr', 'args':{'trainlag': 6, 'testlag': 6, 'decoding_window':6}}]
+decoders = [{'method': 'lr', 'args':{'trainlag': 0, 'testlag': 0, 'decoding_window':6}}]
 
 task_args = []
 for param_comb in itertools.product(dimreduc_files, decoders):

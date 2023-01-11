@@ -78,6 +78,8 @@ if __name__ == '__main__':
         resultsd3 = []
         for i, data_file in tqdm(enumerate(data_files)):
             dat = load_sabes('%s/%s' % (dpath, data_file))
+            dat = reach_segment_sabes(dat, data_file=data_file.split('.mat')[0])
+
             y = np.squeeze(dat['spike_rates'])
             for dimreduc_method in ['DCA', 'KCA', 'LQGCA', 'PCA']:
                 df_ = apply_df_filters(sabes_df, data_file=data_file, fold_idx=0, dim=DIM, dimreduc_method=dimreduc_method)
@@ -90,7 +92,8 @@ if __name__ == '__main__':
                 # Project data
                 yproj = y @ V
 
-                # yproj = gaussian_filter1d(yproj, sigma=5)
+                # Segment reaches
+
 
                 result_ = {}
                 result_['data_file'] = data_file

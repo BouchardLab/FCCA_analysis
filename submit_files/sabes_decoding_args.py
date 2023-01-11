@@ -7,7 +7,7 @@ import itertools
 script_path = '/home/akumar/nse/neural_control/batch_analysis.py'
 
 #desc = 'Decode from indy norm dimreduc 2 (erroneously named indy norm decoding 2'
-desc = 'Decode from indy M1 at 25 ms'
+desc = 'Decode to assess variation over initializations'
 data_path = '/mnt/Secondary/data/sabes'
 #data_path = '/global/cscratch1/sd/akumar25/sabes'
 
@@ -25,16 +25,13 @@ analysis_type = 'decoding'
 loader_args = [[]]
 
 # Grab all the dimreduc files. 
-dimreduc_files = glob.glob('/mnt/Secondary/data/indy_dimreduc25/indy_dimreduc25_*.dat')
+dimreduc_files = glob.glob('/mnt/Secondary/data/sabes_dimreduc_initvar/sabes_dimreduc_initvar*.dat')
 #dimreduc_files = glob.glob(os.environ['SCRATCH'] + '/indy_dimreduc_parametric/indy_dimreduc_parametric_*.dat')
 
 # each set of decoder_args. The rest of the iterables are handled
 # in parallel at execution
 
-decoders = [{'method': 'lr', 'args':{'trainlag': 4, 'testlag': 4, 'decoding_window':5}},
-			{'method': 'lr', 'args':{'trainlag': 4, 'testlag': 4, 'decoding_window':10}},
-			{'method': 'lr', 'args':{'trainlag': 8, 'testlag': 8, 'decoding_window':5}},
-			{'method': 'lr', 'args':{'trainlag': 8, 'testlag': 8, 'decoding_window':10}}]
+decoders = [{'method': 'lr', 'args':{'trainlag': 4, 'testlag': 4, 'decoding_window':5}}]
 
 task_args = []
 for param_comb in itertools.product(dimreduc_files, decoders):

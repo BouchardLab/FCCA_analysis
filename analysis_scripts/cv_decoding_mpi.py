@@ -57,6 +57,8 @@ def gen_sbatch(savepath, T, reps, nseeds):
             t, _, seed = comb
             sb.write('srun -N 3 -n 130 shifter --entrypoint python cv_decoding_mpi.py %s %d %d &\n' % (savepath, t, seed))
 
+        sb.write('wait')
+
 if __name__ == '__main__':
 
     comm = MPI.COMM_WORLD

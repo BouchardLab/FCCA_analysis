@@ -177,10 +177,10 @@ if __name__ == '__main__':
                 resultsd3.append(result_)
 
 
-        with open('jpcaAtmp_il_trialized.dat', 'wb') as f:
+        with open('jpcaAtmp_il.dat', 'wb') as f:
             f.write(pickle.dumps(resultsd3))            
     else:
-        with open('jpcaAtmp_il_trialized.dat', 'rb') as f:
+        with open('jpcaAtmp_il.dat', 'rb') as f:
             resultsd3 = pickle.load(f)
 
     A_df = pd.DataFrame(resultsd3)
@@ -304,10 +304,10 @@ if __name__ == '__main__':
         # Rotate *clockwise* by theta
         R = lambda theta: np.array([[np.cos(-1*theta), -np.sin(-theta)], \
                                      [np.sin(-theta), np.cos(theta)]])        
-        trajectory = np.array([R(theta0) @ t[0:2] for t in trajectory])
+        trajectory = np.array([R(theta0 - np.pi/4) @ t[0:2] for t in trajectory])
 
-        ax[0].plot(trajectory[:, 0], trajectory[:, 1], 'k', alpha=0.5)
-        ax[0].arrow(trajectory[-1, 0], trajectory[-1, 1], 
+        ax[1].plot(trajectory[:, 0], trajectory[:, 1], 'k', alpha=0.5)
+        ax[1].arrow(trajectory[-1, 0], trajectory[-1, 1], 
                     trajectory[-1, 0] - trajectory[-2, 0], trajectory[-1, 1] - trajectory[-2, 1], 
                     head_width=0.08, color="k", alpha=0.5)
         
@@ -324,10 +324,10 @@ if __name__ == '__main__':
         # Rotate trajectory so that the first 5 timesteps all go off at the same angle
         theta0 = np.arctan2(trajectory[15, 1], trajectory[15, 0])
 
-        trajectory = np.array([R(theta0) @ t[0:2] for t in trajectory])
+        trajectory = np.array([R(theta0 - np.pi/4) @ t[0:2] for t in trajectory])
 
-        ax[1].plot(trajectory[:, 0], trajectory[:, 1], '#c73d34', alpha=0.5)
-        ax[1].arrow(trajectory[-1, 0], trajectory[-1, 1], 
+        ax[0].plot(trajectory[:, 0], trajectory[:, 1], '#c73d34', alpha=0.5)
+        ax[0].arrow(trajectory[-1, 0], trajectory[-1, 1], 
                     trajectory[-1, 0] - trajectory[-2, 0], trajectory[-1, 1] - trajectory[-2, 1], 
                     head_width=0.05, color="#c73d34", alpha=0.5)
 
@@ -339,19 +339,19 @@ if __name__ == '__main__':
 
     ax[0].set_aspect('equal')   
     ax[1].set_aspect('equal')
-    ax[0].set_xlim([-2.2, 3.5])
-    ax[0].set_ylim([-2.2, 3.5])
+    ax[1].set_xlim([-2.2, 3.5])
+    ax[1].set_ylim([-2.2, 3.5])
 
-    ax[1].set_xlim([-1.2, 2.2])
-    ax[1].set_ylim([-1.2, 2.2])
+    ax[0].set_xlim([-1.2, 2.2])
+    ax[0].set_ylim([-1.2, 2.2])
 
-    ax[0].set_title('jPCA on PCA', fontsize=14)
-    ax[0].set_ylabel('jPC2', fontsize=14)
-    ax[0].set_xlabel('jPC1', fontsize=14)
-
-    ax[1].set_title('jPCA on FCCA', fontsize=14)
+    ax[1].set_title('jPCA on PCA', fontsize=14)
     ax[1].set_ylabel('jPC2', fontsize=14)
     ax[1].set_xlabel('jPC1', fontsize=14)
+
+    ax[0].set_title('jPCA on FCCA', fontsize=14)
+    ax[0].set_ylabel('jPC2', fontsize=14)
+    ax[0].set_xlabel('jPC1', fontsize=14)
 
     ax[0].spines['right'].set_color('none')
     ax[0].spines['top'].set_color('none')
@@ -372,11 +372,11 @@ if __name__ == '__main__':
     fig.savefig('%s/trajectories.pdf' % figpath, bbox_inches='tight', pad_inches=0)
 
     # Boxplots
-    fig, ax = plt.subplots(1, 1, figsize=(5, 2.5))
+    fig, ax = plt.subplots(1, 1, figsize=(1.5, 4))
 
     medianprops = dict(linewidth=0)
     #bplot = ax.boxplot([d_U[:, 2, 1], d_U[:, 3, 1]], patch_artist=True, medianprops=medianprops, notch=True, vert=False, showfliers=False)
-    bplot = ax.boxplot([maxim[:, 0, 0], maxim[:, 1, 0]], patch_artist=True, medianprops=medianprops, notch=True, vert=False, showfliers=False, widths=[0.25, 0.25])
+    bplot = ax.boxplot([maxim[:, 0, 0], maxim[:, 1, 0]], patch_artist=True, medianprops=medianprops, notch=True, vert=True, showfliers=False, widths=[0.25, 0.25])
 
     # _, p = scipy.stats.wilcoxon(d_U[:, 2, 1], d_U[:, 3, 1])
     _, p = scipy.stats.wilcoxon(maxim[:, 0, 0], maxim[:, 1, 0])
@@ -385,11 +385,11 @@ if __name__ == '__main__':
     method1 = 'FCCA'
     method2 = 'PCA'
  
-    ax.set_yticklabels([method1, method2], fontsize=18, rotation=45)
-    ax.set_xticks([0, 0.05, 0.1])
+    ax.set_xticklabels([method1, method2], fontsize=18, rotation=45)
+    ax.set_yticks([0, 0.05, 0.1])
     ax.tick_params(axis='both', labelsize=16)
     #ax.set_ylabel(r'$\sum_i Im(\lambda_i)$', fontsize=22)
-    ax.set_xlabel('Sum Imaginary Eigenvalues', fontsize=18
+    ax.set_ylabel('Sum Imaginary Eigenvalues', fontsize=18
     )
     ax.set_title('****', fontsize=22)
     #ax.invert_xaxis()
@@ -403,4 +403,4 @@ if __name__ == '__main__':
     # ax.set_xlim([13, 0])
 
     fig.tight_layout()
-    fig.savefig('%s/jpca_eig_bplot_trialized.pdf' % figpath, bbox_inches='tight', pad_inches=0)
+    fig.savefig('%s/jpca_eig_bplot_.pdf' % figpath, bbox_inches='tight', pad_inches=0)

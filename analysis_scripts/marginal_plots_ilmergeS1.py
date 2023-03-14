@@ -68,25 +68,17 @@ if __name__ == '__main__':
     ################################ Decoding comparison #####################################
     # co-plot marginal decoding with the usual decoding
 
-    with open('/mnt/Secondary/data/postprocessed/indy_decoding_marginal.dat', 'rb') as f:
+    with open('/mnt/Secondary/data/postprocessed/sabes_marginal_S1df.pkl', 'rb') as f:
         rl = pickle.load(f)
-    indy_mdf = pd.DataFrame(rl)
-    with open('/mnt/Secondary/data/postprocessed/loco_decoding_marginal_df.dat', 'rb') as f:
-        rl = pickle.load(f)
-    loco_mdf = pd.DataFrame(rl)
+    marginal_df = pd.DataFrame(rl)
 
-    marginal_df = pd.concat([indy_mdf, loco_mdf])
-    
-    with open('/mnt/Secondary/data/postprocessed/indy_decoding_df2.dat', 'rb') as f:
-        rl = pickle.load(f)
-    indy_df = pd.DataFrame(rl)
+    with open('/mnt/Secondary/data/postprocessed/loco_lag1_decodingdf.dat', 'rb') as f:
+        result_list = pickle.load(f)
+    with open('/mnt/Secondary/data/postprocessed/indy_S1_decodingdf.dat', 'rb') as f:
+        rl2 = pickle.load(f)
 
-    with open('/mnt/Secondary/data/postprocessed/loco_decoding_df.dat', 'rb') as f:
-        loco_df = pickle.load(f)
-    loco_df = pd.DataFrame(loco_df)
-    loco_df = apply_df_filters(loco_df,
-                            loader_args={'bin_width': 50, 'filter_fn': 'none', 'filter_kwargs': {}, 'boxcox': 0.5, 'spike_threshold': 100, 'region': 'M1'},
-                            decoder_args={'trainlag': 4, 'testlag': 4, 'decoding_window': 5})
+    loco_df = pd.DataFrame(result_list)
+    # filter by good files
     good_loco_files = ['loco_20170210_03.mat',
     'loco_20170213_02.mat',
     'loco_20170215_02.mat',
@@ -95,24 +87,25 @@ if __name__ == '__main__':
     'loco_20170301_05.mat',
     'loco_20170302_02.mat']
 
-    loco_df = apply_df_filters(loco_df, data_file=good_loco_files)        
+    loco_df = apply_df_filters(loco_df, data_file=good_loco_files, 
+                                loader_args={'bin_width': 50, 'filter_fn': 'none', 'filter_kwargs': {}, 
+                                'boxcox': 0.5, 'spike_threshold': 100, 'region': 'S1'})
 
-    sabes_df = pd.concat([indy_df, loco_df])
+    indy_df = pd.DataFrame(rl2)        
 
-
-    # Grab PCA results
-    with open('/mnt/Secondary/data/postprocessed/sabes_kca_decodign_df.dat', 'rb') as f:
-        pca_decoding_df = pickle.load(f)
+    sabes_df = pd.concat([loco_df, indy_df])
 
     data_files = np.unique(sabes_df['data_file'].values)
     dims = np.unique(sabes_df['dim'].values)
     r2fc = np.zeros((len(data_files), dims.size, 5, 3))
+    sr2_vel_pca = np.zeros((len(data_files), dims.size, 5, 3))
     # marginal r^2
     r2_marginal = np.zeros((len(data_files), dims.size, 5, 2, 3))
 
     for i, data_file in tqdm(enumerate(data_files)):
         for j, dim in enumerate(dims):               
             for f in range(5):
+
                 dim_fold_df = apply_df_filters(sabes_df, data_file=data_file, dim=dim, fold_idx=f, dimreduc_method='LQGCA')
                 # Trace loss
                 try:
@@ -120,6 +113,14 @@ if __name__ == '__main__':
                 except:
                     pdb.set_trace()
                 r2fc[i, j, f, :] = dim_fold_df.iloc[0]['r2']
+
+                dim_fold_df = apply_df_filters(sabes_df, data_file=data_file, dim=dim, fold_idx=f, dimreduc_method='PCA')
+                try:
+                    assert(dim_fold_df.shape[0] == 1)
+                except:
+                    pdb.set_trace()
+                sr2_vel_pca[i, j, f, :] = dim_fold_df.iloc[0]['r2']
+
 
                 dim_fold_marginal_df = apply_df_filters(marginal_df, data_file=data_file, dim=dim, fold_idx=f, dimreduc_method='LQGCA')
                 try:
@@ -135,20 +136,6 @@ if __name__ == '__main__':
                     pdb.set_trace()
                 r2_marginal[i, j, f, 1, :] = dim_fold_marginal_df.iloc[0]['r2']
 
-
-    dims = np.unique(sabes_df['dim'].values)
-    sr2_vel_pca = np.zeros((35, 30, 5))
-    for i, data_file in enumerate(data_files):
-        for j, dim in enumerate(dims):
-            data_file = data_file.split('/')[-1]
-            if 'loco' in data_file:
-                pca_df = apply_df_filters(sabes_df, dim=dim, data_file=data_file, dimreduc_method='PCA')
-            else:
-                pca_df = apply_df_filters(pca_decoding_df, dim=dim, data_file=data_file, dr_method='PCA')        
-
-            assert(pca_df.shape[0] == 5)
-            for k in range(pca_df.shape[0]):
-                sr2_vel_pca[i, j, k] = pca_df.iloc[k]['r2'][1]
     
     # Average across folds and plot
     # REINSERT OLS(5) IN HERE IF NEEDED
@@ -164,7 +151,7 @@ if __name__ == '__main__':
     # FCCA averaged over folds
     fca_r2 = np.mean(r2fc[:, :, :, 1], axis=2)
     # PCA
-    pca_r2 = np.mean(sr2_vel_pca, axis=-1)
+    pca_r2 = np.mean(sr2_vel_pca[:, :, :, 1], axis=2)
 
     # FCA marginal r2 averaged over folds
     fca_marginal_r2 = np.mean(r2_marginal[:, :, :, 0, 1], axis=2)
@@ -228,7 +215,6 @@ if __name__ == '__main__':
             ss_angles[i, f, 2, :] = scipy.linalg.subspace_angles(dffcca.iloc[0]['coef'], dffca_marginal.iloc[0]['coef'])
             ss_angles[i, f, 3, :] = scipy.linalg.subspace_angles(dffca_marginal.iloc[0]['coef'], dfpca_marginal.iloc[0]['coef'][:, 0:dim])
 
-    
 
     stat, p = scipy.stats.wilcoxon(np.mean(ss_angles[:, :, 2, :], axis=-1).ravel(), np.mean(ss_angles[:, :, 1, :], axis=-1).ravel(), alternative='greater')
     print(p)
@@ -262,4 +248,4 @@ if __name__ == '__main__':
     #ax[2].set_xticklabels(['0', r'$\pi/8$', r'$\pi/4$', r'$3\pi/8$', r'$\pi/2$'])
 
     fig.tight_layout()
-    fig.savefig('%s/marginal_summary.pdf' % figpath, bbox_inches='tight', pad_inches=0)
+    fig.savefig('%s/marginal_summaryS1.pdf' % figpath, bbox_inches='tight', pad_inches=0)

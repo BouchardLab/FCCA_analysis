@@ -200,7 +200,7 @@ if __name__ == '__main__':
     comm = MPI.COMM_WORLD
 
     #dimvals = np.array([2, 6, 10, 15])
-    ccadimval = 20
+    ccadimval = 6
     # Fix dimension to 6
     dimval = 6
     measure_from_end=False
@@ -319,7 +319,7 @@ if __name__ == '__main__':
     windows = np.array_split(windows, comm.size)[comm.rank]
 
     # Regressions that are independent of CCA dimension
-    ccadims = np.array([1, 2, 6, 10, -1])
+    ccadims = np.array([1, 2, 6])
 
     # S1 -> M1 regressions
     wr2_S1 = np.zeros((len(windows), 5, 4, ccadims.size))
@@ -328,9 +328,6 @@ if __name__ == '__main__':
 
     # CCA regression
     wr2_CCA = np.zeros((len(windows), 5, 2, ccadims.size))
-
-    # CCA regression
-    wr2_CCA = np.zeros9(len(Windo))
 
     # Iterate over several cca dims to get a sense of how this scales
 
@@ -371,9 +368,9 @@ if __name__ == '__main__':
                         if t[0] >= min(test_idxs) and t[0] <= max(test_idxs) and t[0] > (lag + np.abs(win_min)) and t[1] < (X.shape[0] - lag - np.abs(win_min))]
 
 
-                xxtrain, yytrain = apply_window(xcca, ypca, lag, window, tt_train, decoding_window, measure_from_end=measure_from_end,
+                xxtrain, yytrain = apply_window(xcca, ypca, lag, [window], tt_train, decoding_window, 
                                             include_velocity=False, include_acc=False)
-                xxtest, yytest = apply_window(xcca, ypca, lag, window, tt_test, decoding_window, measure_from_end=measure_from_end,
+                xxtest, yytest = apply_window(xcca, ypca, lag, [window], tt_test, decoding_window, 
                                             include_velocity=False, include_acc=False)
 
                 regressor = RidgeCV().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
@@ -387,9 +384,9 @@ if __name__ == '__main__':
                 wr2_S1[j, fold, 0, k] = r2train
                 wr2_S1[j, fold, 1, k] = r2test
 
-                xxtrain, yytrain = apply_window(xcca, yfcca, lag, window, tt_train, decoding_window, measure_from_end=measure_from_end,
+                xxtrain, yytrain = apply_window(xcca, yfcca, lag, [window], tt_train, decoding_window, 
                                             include_velocity=False, include_acc=False)
-                xxtest, yytest = apply_window(xcca, yfcca, lag, window, tt_test, decoding_window, measure_from_end=measure_from_end,
+                xxtest, yytest = apply_window(xcca, yfcca, lag, [window], tt_test, decoding_window, 
                                             include_velocity=False, include_acc=False)
 
                 regressor = RidgeCV().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
@@ -403,9 +400,9 @@ if __name__ == '__main__':
                 wr2_S1[j, fold, 2, k] = r2train
                 wr2_S1[j, fold, 3, k] = r2test
 
-                xxtrain, yytrain = apply_window(ycca, ypca, lag, window, tt_train, decoding_window, measure_from_end=measure_from_end,
+                xxtrain, yytrain = apply_window(ycca, ypca, lag, [window], tt_train, decoding_window, 
                                             include_velocity=False, include_acc=False)
-                xxtest, yytest = apply_window(ycca, ypca, lag, window, tt_test, decoding_window, measure_from_end=measure_from_end,
+                xxtest, yytest = apply_window(ycca, ypca, lag, [window], tt_test, decoding_window, 
                                             include_velocity=False, include_acc=False)
 
                 regressor = RidgeCV().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
@@ -420,9 +417,9 @@ if __name__ == '__main__':
                 wr2_M1[j, fold, 1, k] = r2test
 
 
-                xxtrain, yytrain = apply_window(ycca, yfcca, lag, window, tt_train, decoding_window, measure_from_end=measure_from_end,
+                xxtrain, yytrain = apply_window(ycca, yfcca, lag, [window], tt_train, decoding_window, 
                                             include_velocity=False, include_acc=False)
-                xxtest, yytest = apply_window(ycca, yfcca, lag, window, tt_test, decoding_window, measure_from_end=measure_from_end,
+                xxtest, yytest = apply_window(ycca, yfcca, lag, [window], tt_test, decoding_window, 
                                             include_velocity=False, include_acc=False)
 
                 regressor = RidgeCV().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
@@ -436,9 +433,9 @@ if __name__ == '__main__':
                 wr2_M1[j, fold, 2, k] = r2train
                 wr2_M1[j, fold, 3, k] = r2test
 
-                xxtrain, yytrain = apply_window(xcca, ycca, lag, window, tt_train, decoding_window, measure_from_end=measure_from_end,
+                xxtrain, yytrain = apply_window(xcca, ycca, lag, [window], tt_train, decoding_window,
                                             include_velocity=False, include_acc=False)
-                xxtest, yytest = apply_window(xcca, ycca, lag, window, tt_test, decoding_window, measure_from_end=measure_from_end,
+                xxtest, yytest = apply_window(xcca, ycca, lag, [window], tt_test, decoding_window, 
                                             include_velocity=False, include_acc=False)
 
                 regressor = RidgeCV().fit(StandardScaler().fit_transform(np.concatenate(xxtrain)),
@@ -453,7 +450,7 @@ if __name__ == '__main__':
                 wr2_CCA[j, fold, 1, k] = r2test
 
     windows = np.array(windows)
-    dpath = '/home/akumar/nse/neural_control/data/s1m1vt2'
+    dpath = '/home/akumar/nse/neural_control/data/s1m1regvt_w10lag3'
     #dpath = '/mnt/sdb1/nc_data/decodingvt'
     with open('%s/didx%d_rank%d_%s_%d.dat' % (dpath, didx, comm.rank, filter_string, measure_from_end), 'wb') as f:
         f.write(pickle.dumps(wr2_S1))

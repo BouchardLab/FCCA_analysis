@@ -80,7 +80,6 @@ if __name__ == '__main__':
     fca_r2 = np.mean(r2fc[:, :, :, 1], axis=2)
     # PCA
     pca_r2 = np.mean(sr2_vel_pca, axis=-1)
-
     # ax.fill_between(dim_vals, np.mean(dca_r2, axis=0) + np.std(dca_r2, axis=0)/np.sqrt(28),
     #                 np.mean(dca_r2, axis=0) - np.std(dca_r2, axis=0)/np.sqrt(28), color=colors[0], alpha=0.25)
     # ax.plot(dim_vals, np.mean(dca_r2, axis=0), color=colors[0])
@@ -190,3 +189,16 @@ if __name__ == '__main__':
     fig.tight_layout()
     fig.savefig('%s/peanut_decoding.pdf' % figpath, bbox_inches='tight', pad_inches=0)
     # fig.savefig('peanut_decoding.pdf', bbox_inches='tight', pad_inches=0)
+
+    ########## S1 ####################################################################
+    with open('/mnt/Secondary/data/postprocessed/loco_decoding_df.dat', 'rb') as f:
+        result_list = pickle.load(f)
+    with open('/mnt/Secondary/data/postprocessed/indy_S1_df.dat', 'rb') as f:
+        rl2 = pickle.load(f)
+
+    loco_df = pd.DataFrame(result_list)
+    indy_df = pd.DataFrame(rl2)
+
+    sabes_df = pd.concat([loco_df, indy_df])
+
+    

@@ -127,11 +127,6 @@ if __name__ == '__main__':
 
     # Pool together n decoding windows prior for training 
     train_windows = [[(int(wc - window_width//2), int(wc + window_width//2))] for wc in window_centers]
-    train_windows = [[] for wc in window_centers]
-    for k in range(len(train_windows)):
-        for l in range(max(0, k - 0), k + 1):
-            train_windows[k].append((int(window_centers[l] - window_width//2), int(window_centers[l] + window_width//2)))
-
     test_windows = [[(int(wc - window_width//2), int(wc + window_width//2))] for wc in window_centers]
 
     if comm.rank == 0:
@@ -333,123 +328,136 @@ if __name__ == '__main__':
 
     # Pool calculation of the decoder across multiple windows in the train set
     for j, train_window in enumerate(train_windows):
-            mse_, bias_, var_, ntr_ =  lr_bv_windowed(Xpca, Z, 0, train_window, test_windows[j], transition_times, straight_reach, correction_reach, 
-                                                      pkassign, decoding_window=decoding_window, n_boots=200, random_seed=500, offsets=offsets)
+        print(j)
+        mse_, bias_, var_, ntr_ =  lr_bv_windowed(Xpca, Z, 0, train_window, test_windows[j], transition_times, straight_reach, correction_reach, 
+                                                    pkassign, decoding_window=decoding_window, n_boots=200, random_seed=500, offsets=offsets, norm=True)
 
-            bias[j, 0, :] = bias_
-            var[j, 0, :] = var_
-            mse[j, 0, :] = mse_
-            ntr[j, 0, 0] = ntr_
+        bias[j, 0, :] = bias_
+        var[j, 0, :] = var_
+        mse[j, 0, :] = mse_
+        ntr[j, 0, 0] = ntr_
 
-            mse_, bias_, var_, ntr_ =  lr_bv_windowed(Xlqg, Z, 0, train_window, test_windows[j], transition_times, straight_reach, correction_reach, 
-                                                pkassign, decoding_window=decoding_window, n_boots=200, random_seed=500, offsets=offsets)
-            bias[j, 1, :] = bias_
-            var[j, 1, :] = var_
-            mse[j, 1, :] = mse_
-            ntr[j, 1, 0] = ntr_
+        mse_, bias_, var_, ntr_ =  lr_bv_windowed(Xlqg, Z, 0, train_window, test_windows[j], transition_times, straight_reach, correction_reach, 
+                                            pkassign, decoding_window=decoding_window, n_boots=200, random_seed=500, offsets=offsets, norm=True)
+        bias[j, 1, :] = bias_
+        var[j, 1, :] = var_
+        mse[j, 1, :] = mse_
+        ntr[j, 1, 0] = ntr_
 
-            # Also keep track of the r2
+        # Also keep track of the r2
+        r2pos, r2vel, r2acc, r2post, r2velt, r2acct, _, ntr_, _, _ = lr_decode_windowed(Xpca, Z, 0, train_window, test_windows[j], transition_times, train_idxs=straight_reach,
+                                                                                            test_idxs=correction_reach, decoding_window=decoding_window, pkassign=pkassign, offsets=offsets) 
+        wr2[j, 0, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
+        ntr[j, 0, 1] = ntr_
 
-            r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete,  _, ntr_ = lr_decode_windowed(Xpca, Z, 0, train_window, test_windows[j], transition_times, train_idxs=straight_reach,
-                                                                                                test_idxs=correction_reach, decoding_window=decoding_window, pkassign=pkassign, offsets=offsets) 
-            wr2[j, 0, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
-            ntr[j, 0, 1] = ntr_
+        r2pos, r2vel, r2acc, r2post, r2velt, r2acct, _, ntr_, _, _ = lr_decode_windowed(Xlqg, Z, 0, train_window, test_windows[j], transition_times, train_idxs=straight_reach,
+                                                                                        test_idxs=correction_reach, decoding_window=decoding_window, 
+                                                                                        pkassign=pkassign, offsets=offsets)
+        wr2[j, 1, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
+        ntr[j, 1, 1] = ntr_
 
-            r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete,  _, ntr_ = lr_decode_windowed(Xlqg, Z, 0, train_window, test_windows[j], transition_times, train_idxs=straight_reach,
+        ############################################################# Second, we train on both single and multi peak reaches and test on the latter half of multi peak
+        # Feed into lr_decoder. Use lag of 0 since we already applied, but feed in the decoding window
+        mse_, bias_, var_, ntr_ =  lr_bv_windowed(Xpca, Z, 0, train_window, test_windows[j], transition_times, np.sort(np.concatenate([straight_reach, correction_reach])), 
+                                            correction_reach, pkassign, decoding_window=decoding_window, n_boots=200, random_seed=500, apply_pk_to_train=True, offsets=offsets, norm=True)
+        bias[j, 2, :] = bias_
+        var[j, 2, :] = var_
+        mse[j, 2, :] = mse_
+        ntr[j, 2, 0] = ntr_
+
+        mse_, bias_, var_, ntr_ =  lr_bv_windowed(Xlqg, Z, 0, train_window, test_windows[j], transition_times, np.sort(np.concatenate([straight_reach, correction_reach])), 
+                                            correction_reach, pkassign, decoding_window=decoding_window, n_boots=200, random_seed=500, apply_pk_to_train=True, offsets=offsets, norm=True)
+        bias[j, 3, :] = bias_
+        var[j, 3, :] = var_
+        mse[j, 3, :] = mse_
+        ntr[j, 3, 0] = ntr_
+
+        # Also keep track of the r2
+
+        r2pos, r2vel, r2acc, r2post, r2velt, r2acct, _, ntr_, _, _ = lr_decode_windowed(Xpca, Z, 0, train_window, test_windows[j], transition_times, train_idxs=np.sort(np.concatenate([straight_reach, correction_reach])),
                                                                                             test_idxs=correction_reach, decoding_window=decoding_window, 
-                                                                                            pkassign=pkassign, offsets=offsets)
-            wr2[j, 1, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
-            ntr[j, 1, 1] = ntr_
+                                                                                            pkassign=pkassign,  apply_pk_to_train=True, offsets=offsets) 
+        wr2[j, 2, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
+        ntr[j, 2, 1] = ntr_
+        
 
-            ############################################################# Second, we train on both single and multi peak reaches and test on the latter half of multi peak
-            # Feed into lr_decoder. Use lag of 0 since we already applied, but feed in the decoding window
-            mse_, bias_, var_, ntr_ =  lr_bv_windowed(Xpca, Z, 0, train_window, test_windows[j], transition_times, np.sort(np.concatenate([straight_reach, correction_reach])), 
-                                                correction_reach, pkassign, decoding_window=decoding_window, n_boots=200, random_seed=500, apply_pk_to_train=True, offsets=offsets)
-            bias[j, 2, :] = bias_
-            var[j, 2, :] = var_
-            mse[j, 2, :] = mse_
-            ntr[j, 2, 0] = ntr_
+        r2pos, r2vel, r2acc, r2post, r2velt, r2acct, _, ntr_, _, _ = lr_decode_windowed(Xlqg, Z, 0, train_window, test_windows[j], transition_times, train_idxs=np.sort(np.concatenate([straight_reach, correction_reach])),
+                                                                                        test_idxs=correction_reach, decoding_window=decoding_window, 
+                                                                                        pkassign=pkassign,  apply_pk_to_train=True, offsets=offsets)
+        wr2[j, 3, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
+        ntr[j, 3, 1] = ntr_
 
-            mse_, bias_, var_, ntr_ =  lr_bv_windowed(Xlqg, Z, 0, train_window, test_windows[j], transition_times, np.sort(np.concatenate([straight_reach, correction_reach])), 
-                                                correction_reach, pkassign, decoding_window=decoding_window, n_boots=200, random_seed=500, apply_pk_to_train=True, offsets=offsets)
-            bias[j, 3, :] = bias_
-            var[j, 3, :] = var_
-            mse[j, 3, :] = mse_
-            ntr[j, 3, 0] = ntr_
+        ############################################################## Third, we train on multi peak only during the first portion and test on the latter half
+        # Feed into lr_decoder. Use lag of 0 since we already applied, but feed in the decoding window
+        mse_, bias_, var_, ntr_ =  lr_bv_windowed(Xpca, Z, 0, train_window, test_windows[j], transition_times, correction_reach, 
+                                            correction_reach, pkassign, decoding_window=decoding_window, n_boots=200, random_seed=500,  apply_pk_to_train=True, offsets=offsets, norm=True)
+        bias[j, 4, :] = bias_
+        var[j, 4, :] = var_
+        mse[j, 4, :] = mse_
+        ntr[j, 4, 0] = ntr_
 
-            # Also keep track of the r2
+        mse_, bias_, var_, ntr_ =  lr_bv_windowed(Xlqg, Z, 0, train_window, test_windows[j], transition_times, correction_reach, 
+                                            correction_reach, pkassign, decoding_window=decoding_window, n_boots=200, random_seed=500,  apply_pk_to_train=True, offsets=offsets, norm=True)
+        bias[j, 5, :] = bias_
+        var[j, 5, :] = var_
+        mse[j, 5, :] = mse_
+        ntr[j, 5, 0] = ntr_
 
-            r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete,  _, ntr_ = lr_decode_windowed(Xpca, Z, 0, train_window, test_windows[j], transition_times, train_idxs=np.sort(np.concatenate([straight_reach, correction_reach])),
-                                                                                                test_idxs=correction_reach, decoding_window=decoding_window, 
-                                                                                                pkassign=pkassign,  apply_pk_to_train=True, offsets=offsets) 
-            wr2[j, 2, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
-            ntr[j, 2, 1] = ntr_
-            
+        # Also keep track of the r2
 
-            r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete,  _, ntr_ = lr_decode_windowed(Xlqg, Z, 0, train_window, test_windows[j], transition_times, train_idxs=np.sort(np.concatenate([straight_reach, correction_reach])),
+        r2pos, r2vel, r2acc, r2post, r2velt, r2acct, _, ntr_, _, _ = lr_decode_windowed(Xpca, Z, 0, train_window, test_windows[j], transition_times, train_idxs=correction_reach,
                                                                                             test_idxs=correction_reach, decoding_window=decoding_window, 
-                                                                                            pkassign=pkassign,  apply_pk_to_train=True, offsets=offsets)
-            wr2[j, 3, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
-            ntr[j, 3, 1] = ntr_
+                                                                                            pkassign=pkassign,  apply_pk_to_train=True, offsets=offsets) 
+        wr2[j, 4, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
+        ntr[j, 4, 1] = ntr_
 
-            ############################################################## Third, we train on multi peak only during the first portion and test on the latter half
-            # Feed into lr_decoder. Use lag of 0 since we already applied, but feed in the decoding window
-            mse_, bias_, var_, ntr_ =  lr_bv_windowed(Xpca, Z, 0, train_window, test_windows[j], transition_times, correction_reach, 
-                                                correction_reach, pkassign, decoding_window=decoding_window, n_boots=200, random_seed=500,  apply_pk_to_train=True, offsets=offsets)
-            bias[j, 4, :] = bias_
-            var[j, 4, :] = var_
-            mse[j, 4, :] = mse_
-            ntr[j, 4, 0] = ntr_
+        r2pos, r2vel, r2acc, r2post, r2velt, r2acct, _, ntr_, _, _ = lr_decode_windowed(Xlqg, Z, 0, train_window, test_windows[j], transition_times, train_idxs=correction_reach,
+                                                                                        test_idxs=correction_reach, decoding_window=decoding_window, 
+                                                                                        pkassign=pkassign,  apply_pk_to_train=True, offsets=offsets)
+        wr2[j, 5, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
+        ntr[j, 5, 1] = ntr_
 
-            mse_, bias_, var_, ntr_ =  lr_bv_windowed(Xlqg, Z, 0, train_window, test_windows[j], transition_times, correction_reach, 
-                                                correction_reach, pkassign, decoding_window=decoding_window, n_boots=200, random_seed=500,  apply_pk_to_train=True, offsets=offsets)
-            bias[j, 5, :] = bias_
-            var[j, 5, :] = var_
-            mse[j, 5, :] = mse_
-            ntr[j, 5, 0] = ntr_
+        ############################################################## 
+        # Lastly: Do a train/test split within ~~single phase reaches~~, multiphase only.
+        # This requires 2 things: Set pkassign to 1 across the whole time series, and then split straight reaches into train and 
+        # test indices
+        pkassign_tmp = np.array([1 * np.invert(pka.astype(bool)) for pka in pkassign])
 
-            # Also keep track of the r2
+        # Do an 80/20 train test split
+        # rnd = np.random.RandomState(seed=1234)
+        # train_idxs = rnd.choice(np.arange(len(correction_reach)), int(0.8 * len(correction_reach)), replace=False)
+        # train_single_phase = np.array(correction_reach)[train_idxs]
+        # test_single_phase = np.array(correction_reach)[np.setdiff1d(np.arange(len(correction_reach)), train_idxs)]
+        mse_, bias_, var_, ntr_ =  lr_bv_windowed(Xpca, Z, 0, train_window, test_windows[j], transition_times, straight_reach, 
+                                                    correction_reach, pkassign_tmp, decoding_window=decoding_window, n_boots=200, 
+                                                    random_seed=500,  apply_pk_to_train=False, offsets=offsets, norm=True)
+        bias[j, 6, :] = bias_
+        var[j, 6, :] = var_
+        mse[j, 6, :] = mse_
+        ntr[j, 6, 0] = ntr_
 
-            r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete,  _, ntr_ = lr_decode_windowed(Xpca, Z, 0, train_window, test_windows[j], transition_times, train_idxs=correction_reach,
-                                                                                                test_idxs=correction_reach, decoding_window=decoding_window, 
-                                                                                                pkassign=pkassign,  apply_pk_to_train=True, offsets=offsets) 
-            wr2[j, 4, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
-            ntr[j, 4, 1] = ntr_
+        mse_, bias_, var_, ntr_ =  lr_bv_windowed(Xlqg, Z, 0, train_window, test_windows[j], transition_times, straight_reach, 
+                                                 correction_reach, pkassign_tmp, decoding_window=decoding_window, n_boots=200, random_seed=500,  apply_pk_to_train=False, offsets=offsets, norm=True)
+        bias[j, 7, :] = bias_
+        var[j, 7, :] = var_
+        mse[j, 7, :] = mse_
+        ntr[j, 7, 0] = ntr_
 
-            r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete,  _, ntr_ = lr_decode_windowed(Xlqg, Z, 0, train_window, test_windows[j], transition_times, train_idxs=correction_reach,
+        # Also keep track of the r2
+
+        r2pos, r2vel, r2acc, r2post, r2velt, r2acct, _, ntr_, _, _ = lr_decode_windowed(Xpca, Z, 0, train_window, test_windows[j], transition_times, train_idxs=straight_reach,
                                                                                             test_idxs=correction_reach, decoding_window=decoding_window, 
-                                                                                            pkassign=pkassign,  apply_pk_to_train=True, offsets=offsets)
-            wr2[j, 5, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
-            ntr[j, 5, 1] = ntr_
+                                                                                            pkassign=pkassign_tmp,  apply_pk_to_train=False, offsets=offsets) 
+        wr2[j, 6, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
+        ntr[j, 6, 1] = ntr_
 
-            ############################################################## Third, we train on multi peak only during the first portion and test on the latter half
-            # # Feed into lr_decoder. Use lag of 0 since we already applied, but feed in the decoding window
-            # # Lastly, train on t
-            # mse_, bias_, var_ =  lr_bv_windowed(Xpca, Z, 0, window, transition_times, straight_reach, 
-            #                                     correction_reach, pkassign=None, decoding_window=decoding_window, n_boots=200, random_seed=500, offsets=offsets)
-            # bias[j, 6, :] = bias_
-            # var[j, 6, :] = var_
-            # mse[j, 6, :] = mse_
-
-            # mse_, bias_, var_ =  lr_bv_windowed(Xlqg, Z, 0, window, transition_times, straight_reach, 
-            #                                     correction_reach, pkassign=None, decoding_window=decoding_window, n_boots=200, random_seed=500, offsets=offsets)
-            # bias[j, 7, :] = bias_
-            # var[j, 7, :] = var_
-            # mse[j, 7, :] = mse_
-
-            # # Also keep track of the r2
-
-            # r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete,  _ = lr_decode_windowed(Xpca, Z, lag, window, transition_times, train_idxs=straight_reach,
-            #                                                                                     test_idxs=correction_reach, decoding_window=decoding_window, 
-            #                                                                                     pkassign=None, offsets=offsets) 
-            # wr2[j, 6, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
-            # r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete,  _ = lr_decode_windowed(Xlqg, Z, lag, window, transition_times, train_idxs=straight_reach,
-            #                                                                                 test_idxs=correction_reach, decoding_window=decoding_window, 
-            #                                                                                 pkassign=None, offsets=offsets)
-            # wr2[j, 7, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
-
-
-    dpath = '/home/akumar/nse/neural_control/data/biasvariance_vst5'
+        r2pos, r2vel, r2acc, r2post, r2velt, r2acct, _, ntr_, _, _ = lr_decode_windowed(Xlqg, Z, 0, train_window, test_windows[j], transition_times, train_idxs=straight_reach,
+                                                                                        test_idxs=correction_reach, decoding_window=decoding_window, 
+                                                                                        pkassign=pkassign_tmp,  apply_pk_to_train=False, offsets=offsets)
+        wr2[j, 7, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
+        ntr[j, 7, 1] = ntr_
+                        
+    dpath = '/home/akumar/nse/neural_control/data/biasvariance_vst_norm2'
     #dpath = '/mnt/sdb1/nc_data/decodingvt'
     with open('%s/didx%d_rank%d.dat' % (dpath, didx, comm.rank), 'wb') as f:
         f.write(pickle.dumps(bias))

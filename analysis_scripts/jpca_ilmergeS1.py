@@ -64,38 +64,41 @@ if __name__ == '__main__':
         figpath = '/home/akumar/nse/neural_control/figs/loco_indy_merge'
 
 
-    with open('/mnt/Secondary/data/postprocessed/indy_decoding_df2.dat', 'rb') as f:
-        indy_df = pickle.load(f)
-    indy_df = pd.DataFrame(indy_df)
+    good_loco_files = ['loco_20170210_03.mat',
+                    'loco_20170213_02.mat',
+                    'loco_20170215_02.mat',
+                    'loco_20170227_04.mat',
+                    'loco_20170228_02.mat',
+                    'loco_20170301_05.mat',
+                    'loco_20170302_02.mat']
 
     with open('/mnt/Secondary/data/postprocessed/loco_decoding_df.dat', 'rb') as f:
-        loco_df = pickle.load(f)
-    loco_df = pd.DataFrame(loco_df)
-    loco_df = apply_df_filters(loco_df,
-                            loader_args={'bin_width': 50, 'filter_fn': 'none', 'filter_kwargs': {}, 'boxcox': 0.5, 'spike_threshold': 100, 'region': 'M1'},
-                            decoder_args={'trainlag': 4, 'testlag': 4, 'decoding_window': 5})
-    good_loco_files = ['loco_20170210_03.mat',
-    'loco_20170213_02.mat',
-    'loco_20170215_02.mat',
-    'loco_20170227_04.mat',
-    'loco_20170228_02.mat',
-    'loco_20170301_05.mat',
-    'loco_20170302_02.mat']
+        result_list = pickle.load(f)
+    with open('/mnt/Secondary/data/postprocessed/indy_S1_df.dat', 'rb') as f:
+        rl2 = pickle.load(f)
 
-    loco_df = apply_df_filters(loco_df, data_file=good_loco_files)        
 
-    sabes_df = pd.concat([loco_df, indy_df])
+    sabes_df = pd.DataFrame(result_list)
+    indy_df = pd.DataFrame(rl2)
+    sabes_df = pd.concat([sabes_df, indy_df])
+
+    good_loco_files.append(indy_df.iloc[0]['data_file'])
+    loader_arg = {'bin_width':50, 'filter_fn':'none', 'filter_kwargs':{}, 'boxcox':0.5, 'spike_threshold':100, 'region':'S1'}
+    decoder_arg = sabes_df.iloc[0]['decoder_args']
+
+    sabes_df = apply_df_filters(sabes_df, decoder_args=decoder_arg, loader_args=loader_arg)
+    sabes_df = apply_df_filters(sabes_df, data_file=good_loco_files)
 
     data_files = np.unique(sabes_df['data_file'].values)
     dpath = '/mnt/Secondary/data/sabes'
 
     DIM = 6
-    if not os.path.exists('jpcaAtmp_il12345.dat'):
+    if not os.path.exists('jpcaAtmp_ilS1.dat'):
         # Now do subspace identification/VAR inference within these 
         # results = []
         resultsd3 = []
         for i, data_file in tqdm(enumerate(data_files)):
-            dat = load_sabes('%s/%s' % (dpath, data_file))
+            dat = load_sabes('%s/%s' % (dpath, data_file), region='S1')
             dat = reach_segment_sabes(dat, data_file=data_file.split('.mat')[0])
 
             y = np.squeeze(dat['spike_rates'])
@@ -104,7 +107,11 @@ if __name__ == '__main__':
                 if dimreduc_method == 'LQGCA':
                     df_ = apply_df_filters(df_, dimreduc_args={'T': 3, 'loss_type': 'trace', 'n_init': 10})
 
-                assert(df_.shape[0] == 1)
+                try:
+                    assert(df_.shape[0] == 1)
+                except:
+                    pdb.set_trace()
+
                 V = df_.iloc[0]['coef']
                 if dimreduc_method == 'PCA':
                     V = V[:, 0:DIM]        
@@ -177,10 +184,10 @@ if __name__ == '__main__':
                 resultsd3.append(result_)
 
 
-        with open('jpcaAtmp_il.dat', 'wb') as f:
+        with open('jpcaAtmp_ilS1.dat', 'wb') as f:
             f.write(pickle.dumps(resultsd3))            
     else:
-        with open('jpcaAtmp_il.dat', 'rb') as f:
+        with open('jpcaAtmp_ilS1.dat', 'rb') as f:
             resultsd3 = pickle.load(f)
 
     A_df = pd.DataFrame(resultsd3)
@@ -222,8 +229,7 @@ if __name__ == '__main__':
     # Next up:
     # Rotational trajectories.
     
-    # (5., 7., 10., 12.. 16. 17. 19. 20. 25..)
-    data_file = data_files[25]
+    data_file = data_files[0]
 
     df1 = apply_df_filters(sabes_df, data_file=data_file, fold_idx=0, dim=6, dimreduc_method='PCA')
     df2 = apply_df_filters(sabes_df, data_file=data_file, fold_idx=0, dim=6, dimreduc_method='LQGCA', 
@@ -231,7 +237,7 @@ if __name__ == '__main__':
 
 
     datpath = '/mnt/Secondary/data/sabes'
-    dat = load_sabes('%s/%s' % (datpath, data_file))
+    dat = load_sabes('%s/%s' % (datpath, data_file), region='S1')
     dat = reach_segment_sabes(dat, data_file=data_file.split('.mat')[0])
 
     # x = np.array([StandardScaler().fit_transform(dat['spike_rates'][j, ...]) 
@@ -369,7 +375,7 @@ if __name__ == '__main__':
     # ax[1].set_xticks([])
     # ax[1].set_yticks([])
     fig.tight_layout()
-    fig.savefig('%s/trajectories.pdf' % figpath, bbox_inches='tight', pad_inches=0)
+    fig.savefig('%s/jpca_trajectoriesS1.pdf' % figpath, bbox_inches='tight', pad_inches=0)
 
     # Boxplots
     fig, ax = plt.subplots(1, 1, figsize=(2, 4))
@@ -390,7 +396,7 @@ if __name__ == '__main__':
     ax.tick_params(axis='both', labelsize=12)
     #ax.set_ylabel(r'$\sum_i Im(\lambda_i)$', fontsize=22)
     ax.set_ylabel('Strength of Rotational Component', fontsize=12)
-    ax.set_title('****', fontsize=14)
+    ax.set_title('*', fontsize=14)
 
     #ax.invert_xaxis()
  
@@ -403,4 +409,4 @@ if __name__ == '__main__':
     # ax.set_xlim([13, 0])
 
     fig.tight_layout()
-    fig.savefig('%s/jpca_eig_bplot_.pdf' % figpath, bbox_inches='tight', pad_inches=0)
+    fig.savefig('%s/jpca_eig_bplot_S1.pdf' % figpath, bbox_inches='tight', pad_inches=0)

@@ -79,8 +79,8 @@ if __name__ == '__main__':
 
     # # Which plots should we make and save?
     make_scatter = True
-    make_psth = True
-    make_hist = True
+    make_psth = False
+    make_hist = False
     # cascade = False
     # if len(sys.argv) > 1:
     #     if len(sys.argv) >= 2:
@@ -96,7 +96,7 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         figpath = sys.argv[1]
     else:
-        figpath = '/home/akumar/nse/neural_control/figs/final'
+        figpath = '/home/akumar/nse/neural_control/figs/loco_indy_merge'
 
     #dframe = '/home/akumar/nse/neural_control/data/indy_decoding_marginal.dat'
     dframe = '/mnt/Secondary/data/postprocessed/indy_decoding_df2.dat'
@@ -234,8 +234,8 @@ if __name__ == '__main__':
 
         ax.set_xlim([-5, 0.1])
         ax.set_ylim([-5, 0.1])
-        ax.set_xlabel('Log FCCA Loading', fontsize=14)
-        ax.set_ylabel('Log PCA Loading', fontsize=14)
+        ax.set_xlabel('Log FCCA Leverage Score', fontsize=14)
+        ax.set_ylabel('Log PCA Leverage Score', fontsize=14)
         ax.tick_params(axis='both', labelsize=12)
 
         # Annotate with the spearman-r
@@ -278,10 +278,9 @@ if __name__ == '__main__':
             x_ = np.array([dat['spike_rates'][0, dat_segment['transition_times'][idx][0]:dat_segment['transition_times'][idx][0] + T, tn] 
                         for idx in valid_transitions])
 
-            x_ = StandardScaler().fit_transform(x_.T).T
             x_ = gaussian_filter1d(x_, sigma=2)
+            x_ = StandardScaler().fit_transform(x_.T).T
             x_ = np.mean(x_, axis=0)
-
             ax.plot(time, x_, 'k', alpha=0.5)
 
         #ax.spines['left'].set_position('center')

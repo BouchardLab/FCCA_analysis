@@ -25,6 +25,8 @@ from loaders import load_sabes
 from decoders import lr_decoder
 from segmentation import reach_segment_sabes, measure_straight_dev
 
+from psth_ilmerge import get_top_neurons
+
 start_times = {'indy_20160426_01': 0,
                'indy_20160622_01':1700,
                'indy_20160624_03': 500,
@@ -78,9 +80,16 @@ def get_scalar(df_, stat, neu_idx):
 if __name__ == '__main__':
 
     # # Which plots should we make and save?
-    make_scatter = False
+    make_scatter = True
     make_psth = False
-    make_hist = True
+    make_hist = False
+
+    data_path = '/mnt/Secondary/data/sabes'
+    T = 30
+    n = 10
+    bin_width = 50
+
+    DIM=6
 
     # Where to save?
     if len(sys.argv) > 1:
@@ -113,113 +122,9 @@ if __name__ == '__main__':
     'loco_20170302_02.mat']
 
     loco_df = apply_df_filters(loco_df, data_file=good_loco_files)        
+    dimreduc_df = pd.concat([indy_df, loco_df])
 
-    DIM = 6
-
-    # Try the raw leverage scores instead
-    loadings_l = []
-    indy_data_files = np.unique(indy_df['data_file'].values)
-    for i, data_file in tqdm(enumerate(indy_data_files)):
-        loadings = []
-        for dimreduc_method in ['LQGCA', 'PCA']:
-            loadings_fold = []
-            for fold_idx in range(5):  
-                df_ = apply_df_filters(indy_df, data_file=data_file, fold_idx=fold_idx, dim=DIM, dimreduc_method=dimreduc_method)
-                if dimreduc_method == 'LQGCA':
-                    df_ = apply_df_filters(df_, dimreduc_args={'T': 3, 'loss_type': 'trace', 'n_init': 10})
-                V = df_.iloc[0]['coef']
-                if dimreduc_method == 'PCA':
-                    V = V[:, 0:DIM]        
-                loadings_fold.append(calc_loadings(V))
-
-
-            # Average loadings across folds
-            loadings.append(np.mean(np.array(loadings_fold), axis=0))
-
-        for j in range(loadings[0].size):
-            d_ = {}
-            d_['data_file'] = data_file
-            d_['FCCA_loadings'] = loadings[0][j]
-            d_['PCA_loadings'] = loadings[1][j]
-            # d_['DCA_loadings'] = loadings[2][j]
-            d_['nidx'] = j
-            loadings_l.append(d_)                
-
-    loco_data_files = np.unique(loco_df['data_file'].values)
-    for i, data_file in tqdm(enumerate(loco_data_files)):
-        loadings = []
-        for dimreduc_method in ['LQGCA', 'PCA']:
-            loadings_fold = []
-            for fold_idx in range(5):  
-                df_ = apply_df_filters(loco_df, data_file=data_file, fold_idx=fold_idx, dim=DIM, dimreduc_method=dimreduc_method)
-                if dimreduc_method == 'LQGCA':
-                    df_ = apply_df_filters(df_, dimreduc_args={'T': 3, 'loss_type': 'trace', 'n_init': 10})
-                assert(df_.shape[0] == 1)
-                V = df_.iloc[0]['coef']
-                if dimreduc_method == 'PCA':
-                    V = V[:, 0:DIM]        
-                loadings_fold.append(calc_loadings(V))
-
-            # Average loadings across folds
-            loadings.append(np.mean(np.array(loadings_fold), axis=0))
-
-        for j in range(loadings[0].size):
-            d_ = {}
-            d_['data_file'] = data_file
-            d_['FCCA_loadings'] = loadings[0][j]
-            d_['PCA_loadings'] = loadings[1][j]
-            # d_['DCA_loadings'] = loadings[2][j]
-            d_['nidx'] = j
-            loadings_l.append(d_)                
-
-    loadings_df = pd.DataFrame(loadings_l)
-
-    # Combine list of data files into 1
-    data_files = np.concatenate([indy_data_files, loco_data_files])
-
-    # For each data file, find the top 5 neurons that are high in one method but low in all others
-    top_neurons_l = []
-    n = 10
-    for i, data_file in tqdm(enumerate(data_files)):
-        df_ = apply_df_filters(loadings_df, data_file=data_file)
-        # DCA_ordering = np.argsort(df_['DCA_loadings'].values)
-        # KCA_ordering = np.argsort(df_['KCA_loadings'].values)
-        FCCA_ordering = np.argsort(df_['FCCA_loadings'].values)
-        PCA_ordering = np.argsort(df_['PCA_loadings'].values)
-        
-        rank_diffs = np.zeros((FCCA_ordering.size, 1))
-        for j in range(df_.shape[0]):
-            rank_diffs[j, 0] = list(FCCA_ordering).index(j) - list(PCA_ordering).index(j)
-
-        # Find the top 5 neurons according to all pairwise high/low orderings
-        top_neurons = np.zeros((2, n)).astype(int)
-
-        # DCA_top = set([])
-        # KCA_top = set([])
-        FCCA_top = []
-        PCA_top = []
-
-        idx = 0
-        while not np.all([len(x) >= n for x in [FCCA_top, PCA_top]]):
-            idx += 1
-            # Take neurons from the top ordering of each method. Disregard neurons that 
-            # show up in all methods
-            # top_DCA = DCA_ordering[-idx]
-            top_FCCA = FCCA_ordering[-idx]
-            top_PCA = PCA_ordering[-idx]
-
-            if top_FCCA != top_PCA:
-                if top_FCCA not in PCA_top:
-                    FCCA_top.append(top_FCCA)
-                if top_PCA not in FCCA_top:
-                    PCA_top.append(top_PCA)
-            else:
-                continue
-
-        top_neurons[0, :] = FCCA_top[0:n]
-        top_neurons[1, :] = PCA_top[0:n] 
-
-        top_neurons_l.append({'data_file':data_file, 'rank_diffs':rank_diffs, 'top_neurons': top_neurons}) 
+    top_neurons_df, loadings_df = get_top_neurons(dimreduc_df, method1='FCCA', method2='PCA', n=10, pairwise_exclude=False, data_path=data_path, T=T, bin_width=bin_width)
 
     if make_scatter:
         # Re-scatter with the top neurons highlighted
@@ -231,28 +136,23 @@ if __name__ == '__main__':
         x1 = df_['FCCA_loadings'].values
         x2 = df_['PCA_loadings'].values
         
-        #x1idxs = np.arange(x1.size)[x1 > np.quantile(x1, 0.75)]
-        q1_pca = np.quantile(x2, 0.75)
-        q1_fca = np.quantile(x1, 0.75)
+        ax.scatter(np.log10(x1), np.log10(x2), alpha=0.25, color='#a3a3a3', s=15)
 
-        # Plot vertical lines at the PCA quantile
-        #ax.hlines(np.log10(q1_pca), -5, 0, color='k')
-        #ax.vlines(np.log10(q1_fca), -5, 0, color='k')
+        for i in range(top_neurons_df.shape[0]):
+            idxs1 = top_neurons_df.iloc[i]['top_neurons'][0, :]
+            idxs2 = top_neurons_df.iloc[i]['top_neurons'][1, :]
 
-        #x1 = x1[x1idxs]
-        #x2 = x2[x1idxs]
-        #x1 = x1[x1 > np.quantile(x1, 0.05)]
-        #x2 = x2[x2 > np.quantile(x2, 0.05)]
+            # Force pairwise exclusion here
+            idxs1_ = set(idxs1).difference(set(idxs2))
+            idxs2_ = set(idxs2).difference(set(idxs1))
+            idxs1 = np.array(list(idxs1_))
+            idxs2 = np.array(list(idxs2_))
 
-        ax.scatter(np.log10(x1), np.log10(x2), alpha=0.25, color='#753530', s=15)
-
-        for i in range(len(top_neurons_l)):
-            idxs1 = top_neurons_l[i]['top_neurons'][0, :]
-            idxs2 = top_neurons_l[i]['top_neurons'][1, :]
             x = []
             y = []
+
             for j in range(len(idxs1)):
-                d = apply_df_filters(df_, data_file=top_neurons_l[i]['data_file'], nidx=idxs1[j])
+                d = apply_df_filters(df_, data_file=top_neurons_df.iloc[i]['data_file'], nidx=idxs1[j])
                 assert(d.shape[0] == 1)
                 x.append(d.iloc[0]['FCCA_loadings'])
                 y.append(d.iloc[0]['PCA_loadings'])
@@ -261,7 +161,7 @@ if __name__ == '__main__':
             x = []
             y = []
             for j in range(len(idxs1)):
-                d = apply_df_filters(df_, data_file=top_neurons_l[i]['data_file'], nidx=idxs2[j])
+                d = apply_df_filters(df_, data_file=top_neurons_df.iloc[i]['data_file'], nidx=idxs2[j])
                 assert(d.shape[0] == 1)
                 x.append(d.iloc[0]['FCCA_loadings'])
                 y.append(d.iloc[0]['PCA_loadings'])
@@ -269,38 +169,40 @@ if __name__ == '__main__':
 
         ax.set_xlim([-5, 0.1])
         ax.set_ylim([-5, 0.1])
-        ax.set_xlabel('Log FCCA Loading', fontsize=14)
-        ax.set_ylabel('Log PCA Loading', fontsize=14)
+        ax.set_xlabel('Log FCCA Importance Score', fontsize=14)
+        ax.set_ylabel('Log PCA Importance Score', fontsize=14)
         ax.tick_params(axis='both', labelsize=12)
 
         # Annotate with the spearman-r
         r = scipy.stats.spearmanr(x1, x2)[0]
 
         # What is the spearman correlation in the intersection of the upper quartiles?
-        idxs1 = np.argwhere(x1 > q1_fca)[:, 0]
-        idxs2 = np.argwhere(x2 > q1_pca)[:, 0]
-        intersct = np.array(list(set(idxs1).intersection(set(idxs2))))
+        # idxs1 = np.argwhere(x1 > q1_fca)[:, 0]
+        # idxs2 = np.argwhere(x2 > q1_pca)[:, 0]
+        # intersct = np.array(list(set(idxs1).intersection(set(idxs2))))
 
-        r2 = scipy.stats.spearmanr(x1[intersct], x2[intersct])[0]
-        ax.annotate('Spearman r=%.2f' % r, (-4.8, -4.5), fontsize=14)
+        r2 = scipy.stats.spearmanr(x1, x2)[0]
+        ax.annotate('Spearman ' + r'$\rho$' +'=%.2f' % r, (-4.8, -4.5), fontsize=14)
         # ax.annotate('Upper-quartile r=%.2f' % r2, (-4.8, -0.5), fontsize=14)
         fig.savefig('%s/FCAPCAscatter.pdf' % figpath, bbox_inches='tight', pad_inches=0)
 
     # Next: single neuron traces
 
-    top_neurons_df = pd.DataFrame(top_neurons_l)
+    # Selectively plot the traces from respective recording sessions that best emphasize the point being made
+    # These choices were made after manually inspecting statistics in psth_ilmerge.py    
 
     if make_psth:
         fig, ax = plt.subplots(1, 1, figsize=(4, 4))
         #data_files = np.unique(top_neurons_df['data_file'].values)
         #data_file = data_files[4]
-        data_file='indy_20161006_02.mat'
+        data_file_fca ='indy_20160624_03.mat'
+        data_file_pca ='indy_20160930_02.mat'
 
-        df_ = apply_df_filters(top_neurons_df, data_file=data_file)
+        df_ = apply_df_filters(top_neurons_df, data_file=data_file_pca)
         data_path = '/mnt/Secondary/data/sabes'
 
-        dat = load_sabes('%s/%s' % (data_path, data_file), boxcox=None, high_pass=False)
-        dat_segment = reach_segment_sabes(dat, start_time=start_times[data_file.split('.mat')[0]])
+        dat = load_sabes('%s/%s' % (data_path, data_file_pca), boxcox=None, high_pass=False)
+        dat_segment = reach_segment_sabes(dat, start_time=start_times[data_file_pca.split('.mat')[0]])
 
         T = 30
         t = np.array([t_[1] - t_[0] for t_ in dat_segment['transition_times']])
@@ -311,14 +213,15 @@ if __name__ == '__main__':
         n = 10
         for j in range(10):
             tn = df_.iloc[0]['top_neurons'][1, j]    
+#            print('PCA tn': tn)
             x_ = np.array([dat['spike_rates'][0, dat_segment['transition_times'][idx][0]:dat_segment['transition_times'][idx][0] + T, tn] 
                         for idx in valid_transitions])
 
-            x_ = gaussian_filter1d(x_, sigma=2)
             x_ = StandardScaler().fit_transform(x_.T).T
+            x_ = gaussian_filter1d(x_, sigma=2)
             x_ = np.mean(x_, axis=0)
 
-            h1 = ax.plot(time, x_, 'k', alpha=0.5)
+            h1 = ax.plot(time, x_, 'k', alpha=0.5, linewidth=2.5)
 
         T = 30
         t = np.array([t_[1] - t_[0] for t_ in dat_segment['transition_times']])
@@ -337,38 +240,38 @@ if __name__ == '__main__':
 
         ax.set_xticks([0, 1500])
         ax.set_xticklabels([])
-        ax.set_yticks([-1, 0, 1])
+        ax.set_yticks([-0.5, 0, 0.5])
         ax.tick_params(axis='both', labelsize=12)
-        #ax.set_xlabel('Time (s)', fontsize=12)
+        ax.set_xlabel('Time (s)', fontsize=12)
         ax.xaxis.set_label_coords(1.05, 0.56)
-        #ax.set_ylabel('Z-scored Response', fontsize=12)
-        ax.legend([h1], ['PCA'])
+        ax.set_ylabel('Z-scored Response', fontsize=12)
+        #ax.legend([h1], ['PCA'])
         #ax.set_title('Top PCA units', fontsize=14)
 
         fig.savefig('%s/topPCApsth.pdf' % figpath, bbox_inches='tight', pad_inches=0)
 
         fig, ax = plt.subplots(1, 1, figsize=(4, 4))
-        df_ = apply_df_filters(top_neurons_df, data_file=data_file)
-        dat = load_sabes('%s/%s' % (data_path, data_file), boxcox=None, high_pass=False)
-        dat_segment = reach_segment_sabes(dat, start_time=start_times[data_file.split('.mat')[0]])
+        df_ = apply_df_filters(top_neurons_df, data_file=data_file_fca)
+        dat = load_sabes('%s/%s' % (data_path, data_file_fca), boxcox=None, high_pass=False)
+        dat_segment = reach_segment_sabes(dat, start_time=start_times[data_file_fca.split('.mat')[0]])
 
         T = 30
         t = np.array([t_[1] - t_[0] for t_ in dat_segment['transition_times']])
         valid_transitions = np.arange(t.size)[t >= T]
 
         # (Bin size 50 ms)
-        time = 40 * np.arange(T)
+        time = 50 * np.arange(T)
 
         for j in range(n):
             tn = df_.iloc[0]['top_neurons'][0, j]    
+#            print('FCCA tn': tn)
             x_ = np.array([dat['spike_rates'][0, dat_segment['transition_times'][idx][0]:dat_segment['transition_times'][idx][0] + T, tn] 
                         for idx in valid_transitions])
             
-            x_ = gaussian_filter1d(x_, sigma=2)
             x_ = StandardScaler().fit_transform(x_.T).T
+            x_ = gaussian_filter1d(x_, sigma=2)
             x_ = np.mean(x_, axis=0)
-
-            ax.plot(time, x_, 'r', alpha=0.5)
+            ax.plot(time, x_, 'r', alpha=0.5, linewidth=2.5)
 
         #ax.spines['left'].set_position('center')
         ax.spines['bottom'].set_position('center')
@@ -382,13 +285,13 @@ if __name__ == '__main__':
         ax.yaxis.set_ticks_position('left')
 
         ax.set_xticks([0, 1500])
-        ax.set_yticks([-1, 0, 1])
+        ax.set_yticks([-0.5, 0, 0.5])
         ax.set_xticklabels([])
         ax.tick_params(axis='both', labelsize=12)
 
-        #ax.set_xlabel('Time (s)', fontsize=12)
+        ax.set_xlabel('Time (s)', fontsize=12)
         ax.xaxis.set_label_coords(1.05, 0.56)
-        #ax.set_ylabel('Z-scored Response', fontsize=12)
+        ax.set_ylabel('Z-scored Response', fontsize=12)
         #ax.set_title('Top FCCA units', fontsize=14)
 
         fig.savefig('%s/topFCCApsth.pdf' % figpath, bbox_inches='tight', pad_inches=0)
@@ -426,27 +329,83 @@ if __name__ == '__main__':
 
         su_r = np.zeros((len(carray), 2, carray[0].shape[1]))
         keys = ['FCCA_loadings', 'PCA_loadings']
+
+        X = []
+        Yf = []
+        Yp = []
         for i in range(len(carray)):
             for j in range(2):
-                for k in range(carray[0].shape[1]):
-                    df = apply_df_filters(itrim_df, data_file=data_files[i])
+                df = apply_df_filters(itrim_df, data_file=data_files[i])
+                x1 = df[keys[j]].values
 
-                    x1 = df[keys[j]].values
+                if j == 0:
+                    Yf.extend(x1)
+                else:
+                    Yp.extend(x1)
+
+                xx = []
+
+                for k in range(carray[0].shape[1]):
                     x2 = carray[i][:, k]
+                    xx.append(x2)
                     su_r[i, j, k] = scipy.stats.spearmanr(x1, x2)[0]
+            
+                xx = np.array(xx).T            
+            X.append(xx)
+
+        X = np.vstack(X)
+        Yf = np.array(Yf)[:, np.newaxis]
+        Yp = np.array(Yp)[:, np.newaxis]
+        assert(X.shape[0] == Yf.shape[0])
+        assert(X.shape[0] == Yp.shape[0])
+
+        # Train a linear model to predict loadings from the single unit statistics and then assess the 
+        # spearman correlation between predicted and actual loadings
+
+        linmodel1 = LinearRegression().fit(X, Yp)
+        linmodel2 = LinearRegression().fit(X, np.log10(Yp))
+
+        Yp_pred1 = linmodel1.predict(X)
+        Yp_pred2 = linmodel2.predict(X)
+
+        r1p = scipy.stats.spearmanr(Yp_pred1.squeeze(), Yp.squeeze())[0]
+        r2p = scipy.stats.spearmanr(Yp_pred2.squeeze(), Yp.squeeze())[0]
+
+        linmodel1 = LinearRegression().fit(X, Yf)
+        linmodel2 = LinearRegression().fit(X, np.log10(Yf))
+
+        Yf_pred1 = linmodel1.predict(X)
+        Yf_pred2 = linmodel2.predict(X)
+
+        r1f = scipy.stats.spearmanr(Yf_pred1.squeeze(), Yf.squeeze())[0]
+        r2f = scipy.stats.spearmanr(Yf_pred2.squeeze(), Yf.squeeze())[0]
+
+        print(r1p)
+        print(r1f)
+        # linmodel = LinearRegression().fit(su_r[])
+
+        # linmodel = LinearRegression().fit()
+
 
         fig, ax = plt.subplots(figsize=(5, 5),)
 
-        # Prior to averaging, run tests
-        _, p1 = scipy.stats.wilcoxon(su_r[:, 0, 0], su_r[:, 1, 0])
-        _, p2 = scipy.stats.wilcoxon(su_r[:, 0, 1], su_r[:, 1, 1])
-        _, p3 = scipy.stats.wilcoxon(su_r[:, 0, 2], su_r[:, 1, 2])
-        _, p4 = scipy.stats.wilcoxon(su_r[:, 0, 3], su_r[:, 1, 3])
 
-        print(p1)
-        print(p2)
-        print(p3)
-        print(p4)
+        # Prior to averaging, run tests. 
+
+        # Updated for multiple comparisons adjustment. 
+        _, p1 = scipy.stats.wilcoxon(su_r[:, 0, 0], su_r[:, 1, 0], alternative='less')
+        _, p2 = scipy.stats.wilcoxon(su_r[:, 0, 1], su_r[:, 1, 1], alternative='less')
+        _, p3 = scipy.stats.wilcoxon(su_r[:, 0, 2], su_r[:, 1, 2], alternative='less')
+        _, p4 = scipy.stats.wilcoxon(su_r[:, 0, 3], su_r[:, 1, 3], alternative='less')
+
+        # sort
+        pvec = np.sort([p1, p2, p3, p4])
+        # Sequentially test and determine the minimum significance level
+        a1 = pvec[0] * 4
+        a2 = pvec[1] * 3
+        a3 = pvec[2] * 2
+        a4 = pvec[3]
+        print(max([a1, a2, a3, a4]))   
 
         std_err = np.std(su_r, axis=0).ravel()/np.sqrt(35)
         su_r = np.mean(su_r, axis=0).ravel()
@@ -461,19 +420,17 @@ if __name__ == '__main__':
                       yerr=std_err, capsize=5)
 
         # Place numerical values above the bars
-        for rect in bars: 
-            if rect.get_height() > 0:
-                ax.text(rect.get_x() + rect.get_width()/2, np.sign(rect.get_height()) * (np.abs(rect.get_height()) + 0.075), '%.2f' % rect.get_height(),
-                        ha='center', va='bottom', fontsize=10)
-            else:
-                ax.text(rect.get_x() + rect.get_width()/2, np.sign(rect.get_height()) * (np.abs(rect.get_height()) + 0.11), '%.2f' % rect.get_height(),
-                        ha='center', va='bottom', fontsize=10)
-
+        # for rect in bars: 
+        #     if rect.get_height() > 0:
+        #         ax.text(rect.get_x() + rect.get_width()/2, np.sign(rect.get_height()) * (np.abs(rect.get_height()) + 0.075), '%.2f' % rect.get_height(),
+        #                 ha='center', va='bottom', fontsize=10)
+        #     else:
+        #         ax.text(rect.get_x() + rect.get_width()/2, np.sign(rect.get_height()) * (np.abs(rect.    top_neurons_df = pd.DataFrame(top_neurons_l)
         # Add significance tests
-        ax.text(0.5, -0.47, '****', ha='center')
+        ax.text(0.5, 1.0, '**', ha='center')
         ax.text(3.5, 0.7, '**', ha='center')
-        ax.text(6.5, 0.6, '***', ha='center')
-        ax.text(9.5, 0.76, '****', ha='center')
+        ax.text(6.5, 0.6, '**', ha='center')
+        ax.text(9.5, 0.76, '**', ha='center')
 
 
         ax.set_ylim([-0.5, 1.1])
@@ -489,6 +446,10 @@ if __name__ == '__main__':
         labels = ['FCCA', 'PCA']
         ax.legend(handles, labels, loc='lower right')
 
-        ax.set_ylabel('Spearman Correlation', fontsize=14)
+        ax.set_ylabel('Spearman Correlation ' + r'$\rho$', fontsize=14)
         ax.set_yticks([-0.5, 0, 0.5, 1.])
+
+        # Horizontal line at 0
+        ax.hlines(0, -0.5, 10.5, color='k')
+
         fig.savefig('%s/su_spearman_d%d.pdf' % (figpath, DIM), bbox_inches='tight', pad_inches=0)

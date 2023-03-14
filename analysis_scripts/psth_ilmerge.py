@@ -55,12 +55,14 @@ start_times = {'indy_20160426_01': 0,
                'indy_20170131_02': 0,
                }
 
-def get_top_neurons(dimreduc_df, method1='FCCA', method2='PCA', n=10, pairwise_exclude=True):
+def get_top_neurons(dimreduc_df, method1='FCCA', method2='PCA', n=10, pairwise_exclude=True, data_path=None, T=None, bin_width=None):
 
-    data_path = globals()['data_path']
-    T = globals()['T']
-    n = globals()['n']
-    bin_width = globals()['bin_width']
+    if data_path is None:
+        data_path = globals()['data_path']
+    if T is None:
+        T = globals()['T']
+    if bin_width is None:
+        bin_width = globals()['bin_width']
 
     # Load dimreduc_df and calculate loadings
     data_files = np.unique(dimreduc_df['data_file'].values)
@@ -125,13 +127,17 @@ def get_top_neurons(dimreduc_df, method1='FCCA', method2='PCA', n=10, pairwise_e
             top1_ = method_dict[method1][-idx]
             top2_ = method_dict[method2][-idx]
 
-            if top1_ != top2_:
-                if top1_ not in top2:
-                    top1.append(top1_)
-                if top2_ not in top1:
-                    top2.append(top2_)
+            if pairwise_exclude:
+                if top1_ != top2_:
+                    if top1_ not in top2:
+                        top1.append(top1_)
+                    if top2_ not in top1:
+                        top2.append(top2_)
+                else:
+                    continue
             else:
-                continue
+                top1.append(top1_)
+                top2.append(top2_)
 
         top_neurons[0, :] = top1[0:n]
         top_neurons[1, :] = top2[0:n]
@@ -139,7 +145,7 @@ def get_top_neurons(dimreduc_df, method1='FCCA', method2='PCA', n=10, pairwise_e
         top_neurons_l.append({'data_file':data_file, 'rank_diffs':rank_diffs, 'top_neurons': top_neurons}) 
     top_neurons_df = pd.DataFrame(top_neurons_l)
     
-    return top_neurons_df
+    return top_neurons_df, loadings_df
 
 def heatmap_plot(top_neurons_df, path):
 
@@ -369,6 +375,9 @@ def statistics(cross_covs, cross_covs_01, dyn_range):
     avg_dyn_range1 = np.mean(dyn_range[:, 0, :], axis=-1)
     avg_dyn_range2 = np.mean(dyn_range[:, 1, :], axis=-1)
 
+    # Should be (27,6)
+    print((np.argmax(tau_h1), np.argmax(avg_dyn_range2)))
+
     # Paired difference tests
     # > , < , <
     wstat3, p3 = scipy.stats.wilcoxon(tau_h1, tau_h2, alternative='greater')
@@ -423,38 +432,36 @@ def box_plots(method1, method2, tau_max, mag, dyn_range, stats, p, path):
     fig, ax = plt.subplots(1, 3, figsize=(5, 4))
 
     medianprops = dict(linewidth=0)
-    bplot1 = ax[0].boxplot([tau_h1, tau_h2], patch_artist=True, medianprops=medianprops, notch=True, showfliers=False, vert=True)
-    bplot2 = ax[1].boxplot([avg_mag1, avg_mag2], patch_artist=True, medianprops=medianprops, notch=True, showfliers=False, vert=True)
+
+    # Plot dynamic arange, averag magnitude, and then entropy in order
 
     # Instead of PI, make boxplots of the dynamimc range (Z-scored)
-    bplot3 = ax[2].boxplot([avg_dyn_range1, avg_dyn_range2], patch_artist=True, medianprops=medianprops, notch=True, showfliers=False, vert=True)
+    bplot1 = ax[0].boxplot([avg_dyn_range1, avg_dyn_range2], patch_artist=True, medianprops=medianprops, notch=True, showfliers=False, vert=True)
+    bplot2 = ax[1].boxplot([avg_mag1, avg_mag2], patch_artist=True, medianprops=medianprops, notch=True, showfliers=False, vert=True)
+    bplot3 = ax[2].boxplot([tau_h1, tau_h2], patch_artist=True, medianprops=medianprops, notch=True, showfliers=False, vert=True)
 
     ax[0].set_xticklabels([method1, method2])
     ax[1].set_xticklabels([method1, method2])
     ax[2].set_xticklabels([method1, method2])
 
-    ax[0].set_yticks([0, -15, -30])
+    ax[2].set_yticks([0, -15, -30])
     # ax[1].set_xticks([15, 30, 45])
     #ax[0].set_title(r'$\tau$' + '-entropy, p=%f' % p[2], fontsize=10)
     #ax[1].set_title('Avg. magnitude, stat: p=%f' % p[3], fontsize=10)
-    def asterix(p):
-        if p  < 1e-4:
-            return '****'
-        elif p < 1e-3:
-            return '***'
-        elif p < 1e-2:
-            return '**'
-        else:
-            raise ValueError('Very low statistical significance!')
     
-    ax[0].set_title(asterix(p[2]), fontsize=10)
-    ax[1].set_title(asterix(p[3]), fontsize=10)
-    ax[2].set_title(asterix(p[4]), fontsize=10)
+    # Get the minimum significance level consistent with a multiple comparisons test
+    pvec = np.sort(p[2:])
+    a1 = pvec[0] * 3
+    a2 = pvec[1] * 2
+    a3 = pvec[2]
+    print(max([a1, a2, a3]))
+    ax[0].set_title('*****', fontsize=10)
+    ax[1].set_title('*****', fontsize=10)
+    ax[2].set_title('*****', fontsize=10)
     
-    ax[0].set_ylabel('Entropy of peak cross-corr. times', fontsize=12)
+    ax[0].set_ylabel('Avg. Dynamic Range', fontsize=12)
     ax[1].set_ylabel('Average peak cross-corr.', fontsize=12)
-    ax[2].set_ylabel('Avg. Dynamic Range', fontsize=12)
-
+    ax[2].set_ylabel('Entropy of peak cross-corr. times', fontsize=12)
 
     # fill with colors
     colors = ['red', 'black']
@@ -511,14 +518,19 @@ if __name__ == '__main__':
     method2 = 'PCA'
 
     # Get top neurons
-    top_neurons_df = get_top_neurons(dimreduc_df, method1=method1, method2=method2, n=10, pairwise_exclude=True)
+    top_neurons_df, _ = get_top_neurons(dimreduc_df, method1=method1, method2=method2, n=10, pairwise_exclude=True)
     # heatmap_plot(top_neurons_df, figpath)
     # Plot PSTH
-    # PSTH_plot(top_neurons_df, figpath)
+    PSTH_plot(top_neurons_df, figpath)
 
     # Cross-covariance stuff
     cross_covs, cross_covs01, dyn_range = cross_cov_calc(top_neurons_df)
     tau_max, mag, stats, p = statistics(cross_covs, cross_covs01, dyn_range)
+
+
+    data_files = np.unique(dimreduc_df['data_file'].values)
+    # Print out data files corresponding to tuple ((np.argmax(tau_h1), np.argmax(avg_mag2))) for use in su_figs
+    print((data_files[27], data_files[6 ]))
 
     box_plots(method1, method2, tau_max, mag, dyn_range, stats, p, figpath)
     

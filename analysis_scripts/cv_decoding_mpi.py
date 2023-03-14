@@ -66,8 +66,8 @@ if __name__ == '__main__':
     comm = MPI.COMM_WORLD
 
     if comm.rank == 0:
-        fname = '/mnt/Secondary/data/cv/EC2_hg.h5'
-        #fname = os.environ['SCRATCH'] + '/cv/EC2_hg.h5'
+        #fname = '/mnt/Secondary/data/cv/EC2_hg.h5'
+        fname = os.environ['SCRATCH'] + '/cv/EC2_hg.h5'
         with h5py.File(fname, 'r') as f:
             X = np.squeeze(f['X'][:])
             y = f['y'][:]
@@ -96,6 +96,7 @@ if __name__ == '__main__':
     tasks = list(itertools.product(dims, np.arange(10)))
     tasks = np.array_split(tasks, comm.size)[comm.rank]
 
+    
     accuracy = np.zeros((len(tasks), 4))
 
     for ii, task in enumerate(tasks):
@@ -114,7 +115,6 @@ if __name__ == '__main__':
         # dca_model.estimate_data_statistics(Xtrain)
         lqg_model = LQGCA(T=T, d=d, rng_or_seed=lqg_seed)
         lqg_model.estimate_data_statistics(Xtrain)
-        print('Estimated data statistics')
         pca_model = PCA(d)
         Xtrain_pca = pca_model.fit_transform(Xtrain.reshape(Xtrain.shape[0], -1))
         Xtest_pca = pca_model.transform(Xtest.reshape(Xtest.shape[0], -1))
@@ -140,8 +140,7 @@ if __name__ == '__main__':
         pca_coef = pca_model.components_.T[:, 0:d]
         fca_scores = np.zeros(2)
         fca_scores[0] = -1 * np.max(lqg_model.scores)
-
-        fca_scores[1] = lqg_model.score(X=Xtrain, coef=pca_model.components_.T[:, 0:d])
+        fca_scores[1] = lqg_model.score(coef=pca_model.components_.T[:, 0:d])
 
         # pca_scores = np.zeros(2)
         # pca_scores[0] = np.sum(pca_model.explained_variance_ratio_)

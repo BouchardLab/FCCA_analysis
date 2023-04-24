@@ -10,6 +10,7 @@ import pickle
 import pandas as pd
 from tqdm import tqdm
 from sklearn.linear_model import LinearRegression
+from copy import deepcopy
 
 import itertools
 from sklearn.model_selection import KFold
@@ -21,6 +22,8 @@ from segmentation import reach_segment_sabes
 from decoders import lr_decode_windowed
 
 from mpi4py import MPI
+
+from decodingvt_cv_strvcorr import behavioral_metrics
 
 start_times = {'indy_20160426_01': 0,
                'indy_20160622_01':1700,
@@ -57,8 +60,7 @@ def gen_run(name, didxs=np.arange(35), error_filt_params=[(1., 'le')], reach_fil
     with open(name, 'w') as rsh:
         rsh.write('#!/bin/bash\n')
         for (di, efp, rfp) in combs:
-            rsh.write('mpirun -n 8 python decodingvt_cv_ilmerge.py %d %d --error_thresh=%.2f --error_op=%s --q=%.2f --filter_op=%s\n'
-                    % (di, rfp[0], efp[0], efp[1], rfp[1], rfp[2]))
+            rsh.write('mpirun -n 8 python decodingvt_cv_ilmerge.py %d %d --error_thresh=%.2f --error_op=%s --q=%.2f --filter_op=%s\n' % (di, rfp[0], efp[0], efp[1], rfp[1], rfp[2]))
 
 # Filter reaches by:
 # 0: Nothing
@@ -68,7 +70,7 @@ def gen_run(name, didxs=np.arange(35), error_filt_params=[(1., 'le')], reach_fil
 # 4: Number of peaks in velocity (n, equal, ge, le)
 # Can add error threshold on top
 def filter_reach_type(dat, reach_filter, error_percentile=0., error_op='ge', q=1., op='ge', windows=None):
-
+    measure_from_end=False
     error_thresh = np.quantile(dat['target_pair_error'], error_percentile)
     transition_times = np.array(dat['transition_times'], dtype=object)
     
@@ -217,7 +219,7 @@ if __name__ == '__main__':
 
         sabes_df = pd.concat([indy_df, loco_df])
 
-        data_files = np.unique(sabes_df['data_file'].values)
+        data_files = np.unique(sabes_df['data_file'].values)1, 
         data_file = data_files[didx]
 
         # df = apply_df_filters(sabes_df, data_file=data_file, dim=dimval)
@@ -252,6 +254,7 @@ if __name__ == '__main__':
 
         filter_string = 'rf_%d_op_%s_q_%d_et_%d_eop_%s' % (int(args.reach_filter), args.filter_op, int(100*args.q),
                                                            int(100*args.error_thresh), args.error_op)
+        target_pairs = dat['target_pairs']
     else:
         dat = None
         data_files = None
@@ -265,6 +268,7 @@ if __name__ == '__main__':
         window_filter = None
         filter_params = None
         filter_string = None
+        target_pairs = None
 
     coefpca = comm.bcast(coefpca)
     coeffcca = comm.bcast(coeffcca)
@@ -278,6 +282,7 @@ if __name__ == '__main__':
     window_filter = comm.bcast(window_filter)
     filter_params = comm.bcast(filter_params)
     filter_string = comm.bcast(filter_string)
+    target_pairs = comm.bcast(target_pairs)
 
     lag = 4
     decoding_window = 5
@@ -288,6 +293,14 @@ if __name__ == '__main__':
     ntr = np.zeros((len(windows), 5, 2))
 
     # Apply projection
+    MSEtr = np.zeros((len(windows), 5, 2), dtype=object)
+    MSEte = np.zeros((len(windows), 5, 2), dtype=object)
+
+    full_reaches_train = np.zeros((len(windows), 5), dtype=object)
+    full_reaches_test = np.zeros((len(windows), 5), dtype=object)
+
+    # Windows x folds x straight/corrective x train/test x metric
+    behavioral_metrics_array = np.zeros((len(windows), 5, 2, 4), dtype=object)
 
     # Cross-validate the prediction
     for j, window in enumerate(windows):
@@ -299,15 +312,49 @@ if __name__ == '__main__':
             tt_train_idxs = [idx for idx in range(len(transition_times)) if transition_times[idx][0] in train_idxs and transition_times[idx][1] in train_idxs]
             tt_test_idxs = [idx for idx in range(len(transition_times)) if transition_times[idx][0] in test_idxs and transition_times[idx][1] in test_idxs]
 
-            r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete,  _, ntr = lr_decode_windowed(xpca, Z, lag, [window], [window], transition_times, train_idxs=tt_train_idxs,
-                                                                                                test_idxs=tt_test_idxs, decoding_window=decoding_window) 
+            r2pos, r2vel, r2acc, r2post, r2velt, r2acct, reg, ntr_, fitr, fite, msetr, msete  = lr_decode_windowed(xpca, Z, lag, [window], [window], transition_times, train_idxs=tt_train_idxs,
+                                                                                                                   test_idxs=tt_test_idxs, decoding_window=decoding_window) 
+            # Narrow down the msetr and msete by the fitr/fite 
+            msetr = [msetr[i] for i in range(len(msetr)) if i in fitr]
+            msete = [msete[i] for i in range(len(msete)) if i in fite]
+
             wr2[j, fold, 0, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
-            r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete,  _, ntr = lr_decode_windowed(xfcca, Z, lag, [window], [window], transition_times, train_idxs=tt_train_idxs,
-                                                                                            test_idxs=tt_test_idxs, decoding_window=decoding_window)
+            MSEtr[j, fold, 0] = msetr
+            MSEte[j, fold, 0] = msete
+
+            r2pos, r2vel, r2acc, r2post, r2velt, r2acct, reg, ntr_, fitr, fite, msetr, msete  = lr_decode_windowed(xfcca, Z, lag, [window], [window], transition_times, train_idxs=tt_train_idxs,
+                                                                                                                   test_idxs=tt_test_idxs, decoding_window=decoding_window)
+
             wr2[j, fold, 1, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
+            # Narrow down the msetr and msete by the fitr/fite 
+            msetr = [msetr[i] for i in range(len(msetr)) if i in fitr]
+            msete = [msete[i] for i in range(len(msete)) if i in fite]
+            MSEtr[j, fold, 1] = msetr
+            MSEte[j, fold, 1] = msete
+
+            # Convert fitr and fite to an indexing of the original transition times
+            fitr = [tt_train_idxs[idx] for idx in fitr]
+            fite = [tt_test_idxs[idx] for idx in fite]
+
+            full_reaches_train[j, fold] = fitr
+            full_reaches_test[j, fold] = fite
+
+            # Calculate behavioral metrics. For some inexplicable reason, this modifies Z, so use deepcopy
+            dftsecondphase_tr, maxperpd_tr, secondphaseduration_tr, perpdtr = behavioral_metrics(fitr, np.array(transition_times), target_pairs, deepcopy(Z))
+            dftsecondphase_te, maxperpd_te, secondphaseduration_te, perpdte = behavioral_metrics(fite, np.array(transition_times), target_pairs, deepcopy(Z))
+
+            behavioral_metrics_array[j, fold, 0, 0] = dftsecondphase_tr
+            behavioral_metrics_array[j, fold, 0, 1] = maxperpd_tr
+            behavioral_metrics_array[j, fold, 0, 2] = secondphaseduration_tr
+            behavioral_metrics_array[j, fold, 0, 3] = perpdtr
+
+            behavioral_metrics_array[j, fold, 1, 0] = dftsecondphase_te
+            behavioral_metrics_array[j, fold, 1, 1] = maxperpd_te
+            behavioral_metrics_array[j, fold, 1, 2] = secondphaseduration_te
+            behavioral_metrics_array[j, fold, 1, 3] = perpdte
 
     windows = np.array(windows)
-    dpath = '/home/akumar/nse/neural_control/data/decodingvt_cv_ttshift'
+    dpath = '/home/akumar/nse/neural_control/data/decodingvt_cv_ttshift_behaviorsave'
     #dpath = '/mnt/sdb1/nc_data/decodingvt'
     with open('%s/didx%d_rank%d_%s_%d.dat' % (dpath, didx, comm.rank, filter_string, measure_from_end), 'wb') as f:
         f.write(pickle.dumps(wr2))
@@ -316,3 +363,8 @@ if __name__ == '__main__':
         f.write(pickle.dumps(window_filter))
         f.write(pickle.dumps(windows))
         f.write(pickle.dumps(filter_params))
+        f.write(pickle.dumps(MSEtr))
+        f.write(pickle.dumps(MSEte))
+        f.write(pickle.dumps(full_reaches_train))
+        f.write(pickle.dumps(full_reaches_test))
+        f.write(pickle.dumps(behavioral_metrics_array))

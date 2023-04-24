@@ -171,7 +171,7 @@ if __name__ == '__main__':
         coeffcca = dffca.iloc[0]['coef'][:, 0:dimval]
 
         dat = load_sabes('%s/%s' % (data_path, data_file))
-        # Note the lower error threshold
+        # Note the lower 1 threshold
         dat = reach_segment_sabes(dat, data_file=data_file.split('.mat')[0], err_thresh=0.9)
 
         # Measure the distance from target

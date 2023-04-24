@@ -176,6 +176,14 @@ if __name__ == '__main__':
     ax[1].legend(['FCCA/FCCAm', 'PCA/PCAm'], loc='lower right', fontsize=12)
     #ax[0].set_title('Paired differences in decoding', fontsize=16)
 
+    xx = np.mean(fca_r2 - fca_marginal_r2, axis=0)
+    yy = np.mean(fca_r2, axis=0)
+    xx2 = np.mean(pca_r2 - pca_marginal_r2, axis=0)
+    yy2 = np.mean(pca_r2, axis=0)
+
+    pdb.set_trace()
+
+
     #fig.savefig('%s/decoding_differences.pdf' % figpath, bbox_inches='tight', pad_inches=0)
     ################################################ Subspace angles ###########################################################
 

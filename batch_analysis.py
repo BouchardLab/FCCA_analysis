@@ -42,12 +42,13 @@ DECODER_DICT = {'lr': lr_decoder, 'kf': kf_decoder}
 
 class PCA_wrapper():
 
-    def __init__(self, d, lag=1, marginal_only=False):
+    def __init__(self, d, lag=1, marginal_only=False, normalize=False):
         self.pcaobj = PCA()
         self.dim = d
         assert(lag > 0 and isinstance(lag, int))
         self.lag = lag
         self.marginal_only = marginal_only
+        self.normalize = normalize
 
     def fit(self, X):
 
@@ -69,6 +70,8 @@ class PCA_wrapper():
             for i in range(self.dim):
                 self.coef_[var_ordering[i], i] = 1
         else:
+            if self.normalize:
+                X = StandardScaler().fit_transform(X)
             self.pcaobj.fit(X)
             self.coef_ = self.pcaobj.components_.T[:, 0:self.dim]
 

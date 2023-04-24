@@ -40,8 +40,8 @@ with open('/mnt/Secondary/data/postprocessed/indy_S1_df.dat', 'rb') as f:
 sabes_df = pd.DataFrame(result_list)
 indy_df = pd.DataFrame(rl2)
 sabes_df = pd.concat([sabes_df, indy_df])
-good_loco_files.append(indy_df.iloc[0]['data_file'])
 
+good_loco_files.append(indy_df.iloc[0]['data_file'])
 loader_arg = {'bin_width':50, 'filter_fn':'none', 'filter_kwargs':{}, 'boxcox':0.5, 'spike_threshold':100, 'region':'S1'}
 decoder_arg = sabes_df.iloc[0]['decoder_args']
 

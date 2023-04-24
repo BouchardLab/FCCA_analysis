@@ -240,6 +240,7 @@ if __name__ == '__main__':
     # Prior to averaging, run tests. 
 
     # Updated for multiple comparisons adjustment. 
+    pdb.set_trace()
     _, p1 = scipy.stats.wilcoxon(su_r[:, 0, 0], su_r[:, 1, 0], alternative='less')
     _, p2 = scipy.stats.wilcoxon(su_r[:, 0, 1], su_r[:, 1, 1], alternative='less')
     _, p3 = scipy.stats.wilcoxon(su_r[:, 0, 2], su_r[:, 1, 2], alternative='less')

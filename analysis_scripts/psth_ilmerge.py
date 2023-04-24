@@ -99,7 +99,6 @@ def get_top_neurons(dimreduc_df, method1='FCCA', method2='PCA', n=10, pairwise_e
 
     # For each data file, find the top 5 neurons that are high in one method but low in all others
     top_neurons_l = []
-    n = 10
     for i, data_file in tqdm(enumerate(data_files)):
         df_ = apply_df_filters(loadings_df, data_file=data_file)
         FCCA_ordering = np.argsort(df_['FCCA_loadings'].values)
@@ -511,7 +510,8 @@ if __name__ == '__main__':
     'loco_20170301_05.mat',
     'loco_20170302_02.mat']
 
-    loco_df = apply_df_filters(loco_df, data_file=good_loco_files)        
+    loco_df = apply_df_filters(loco_df, data_file=good_loco_files)    
+
     dimreduc_df = pd.concat([dimreduc_df, loco_df])
 
     method1 = 'FCCA'

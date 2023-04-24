@@ -326,9 +326,9 @@ def lr_bv_windowed(X, Z, lag, train_windows, test_windows, transition_times, tra
         assert(np.all([s.size == np.arange(t[0], t[1]).size for (s, t) in zip(pkassign[train_idxs], tt_train)]))
         subset_selection = [np.argwhere(np.array(s) == 0).squeeze() for s in pkassign[train_idxs]]
 
-        Xtrain, Ztrain = apply_window(X, Z, lag, train_windows, tt_train, decoding_window, False, False, subset_selection, offsets=offsets_train)
+        Xtrain, Ztrain, _, _ = apply_window(X, Z, lag, train_windows, tt_train, decoding_window, False, False, subset_selection, offsets=offsets_train)
     else:
-        Xtrain, Ztrain = apply_window(X, Z, lag, train_windows, tt_train, decoding_window, False, False, offsets=offsets_train)
+        Xtrain, Ztrain, _, _ = apply_window(X, Z, lag, train_windows, tt_train, decoding_window, False, False, offsets=offsets_train)
 
     # Filter out by transitions that lie within the test idxs, and stay clear of the start and end
     tt_test = [(t, idx) for idx, t in enumerate(transition_times) 
@@ -344,9 +344,9 @@ def lr_bv_windowed(X, Z, lag, train_windows, test_windows, transition_times, tra
     if pkassign is not None:
         assert(np.all([s.size == np.arange(t[0], t[1]).size for (s, t) in zip(pkassign[test_idxs], tt_test)]))
         subset_selection = [np.argwhere(np.array(s) != 0).squeeze() for s in pkassign[test_idxs]]
-        Xtest, Ztest = apply_window(X, Z, lag, test_windows, tt_test, decoding_window, False, False, subset_selection, offsets=offsets_test)
+        Xtest, Ztest, _, _ = apply_window(X, Z, lag, test_windows, tt_test, decoding_window, False, False, subset_selection, offsets=offsets_test)
     else:
-        Xtest, Ztest = apply_window(X, Z, lag, test_windows, tt_test, decoding_window, False, False, offsets=offsets_test)
+        Xtest, Ztest, _, _ = apply_window(X, Z, lag, test_windows, tt_test, decoding_window, False, False, offsets=offsets_test)
 
     num_test_reaches = len(Xtest)
     # verify dimensionalities
@@ -395,7 +395,7 @@ def lr_bv_windowed(X, Z, lag, train_windows, test_windows, transition_times, tra
 
 
 def apply_window(X, Z, lag, window, transition_times, decoding_window, include_velocity, include_acc, 
-                 subset_selection=None, offsets=None, return_valid_indices=False):
+                 subset_selection=None, offsets=None, enforce_full_indices=False):
     # Update 12/15: We allow for multiple windows for each transition time, so we can train the decoder across pooled sections
     # of the reach
 
@@ -475,21 +475,22 @@ def apply_window(X, Z, lag, window, transition_times, decoding_window, include_v
             window_indices -= lag
             xx_ = X[window_indices]
 
-
             if len(xx_) > 0:
                 assert(xx_.shape[0] == zz_.shape[0])
-                xx.append(xx_)
-                zz.append(zz_)
+                if enforce_full_indices:
+                    if i in full_idxs:
+                        xx.append(xx_)
+                        zz.append(zz_)
+                else:
+                    xx.append(xx_)
+                    zz.append(zz_)
                 valid_idxs.append(i)
                 # try:
                 #     assert(full_idxs[-1] in valid_idxs or i == len(transition_times) - 1)
                 # except:
                 #     pdb.set_trace()
-    if return_valid_indices:
-        return xx, zz, valid_idxs, full_idxs
-    else:
-        return xx, zz
-
+    return xx, zz, valid_idxs, full_idxs
+    
 def lr_decode_windowed(X, Z, lag, train_windows, test_windows, transition_times, train_idxs, test_idxs=None, 
                        decoding_window=1, include_velocity=True, include_acc=True, 
                        pkassign=None, apply_pk_to_train=False, offsets=None):
@@ -518,11 +519,12 @@ def lr_decode_windowed(X, Z, lag, train_windows, test_windows, transition_times,
         # Train on the first velocity peak only
         assert(np.all([s.size == np.arange(t[0], t[1]).size for (s, t) in zip(pkassign[train_idxs], tt_train)]))
         subset_selection = [np.argwhere(np.array(s) == 0).squeeze() for s in pkassign[train_idxs]]
-        Xtrain, Ztrain, _, fi1 = apply_window(X, Z, lag, train_windows, tt_train, decoding_window, include_velocity, include_acc, subset_selection, offsets=offsets_train,
-                                      return_valid_indices=True)
+        Xtrain, Ztrain, vi1, fi1 = apply_window(X, Z, lag, train_windows, tt_train, decoding_window, include_velocity, include_acc, subset_selection, offsets=offsets_train,
+                                      enforce_full_indices=True)
+
     else:
-        Xtrain, Ztrain, _, fi1 = apply_window(X, Z, lag, train_windows, tt_train, decoding_window, include_velocity, include_acc, offsets=offsets_train,
-                                      return_valid_indices=True)
+        Xtrain, Ztrain, vi1, fi1 = apply_window(X, Z, lag, train_windows, tt_train, decoding_window, include_velocity, include_acc, offsets=offsets_train,
+                                      enforce_full_indices=True)
 
     if Xtrain is None:
         return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, None, 0
@@ -547,10 +549,10 @@ def lr_decode_windowed(X, Z, lag, train_windows, test_windows, transition_times,
             assert(np.all([s.size == np.arange(t[0], t[1]).size for (s, t) in zip(pkassign[test_idxs], tt_test)]))
             subset_selection = [np.argwhere(np.array(s) != 0).squeeze() for s in pkassign[test_idxs]]
             Xtest, Ztest, _, fi2 = apply_window(X, Z, lag, test_windows, tt_test, decoding_window, include_velocity, include_acc, subset_selection, offsets=offsets_test, 
-                                               return_valid_indices=True)        
+                                               enforce_full_indices=True)        
         else:
             Xtest, Ztest, _, fi2 = apply_window(X, Z, lag, test_windows, tt_test, decoding_window, include_velocity, include_acc, offsets=offsets_test,
-                                               return_valid_indices=True)
+                                               enforce_full_indices=True)
 
     else:
         Xtest = None
@@ -575,8 +577,7 @@ def lr_decode_windowed(X, Z, lag, train_windows, test_windows, transition_times,
         idx += z.shape[0]
 
     assert(np.all([z1.shape[0] == z2.shape[0] for (z1, z2) in zip(Zpred_segmented, Ztrain)]))
-    Ztrain = np.concatenate(Ztrain)
-
+    #Ztrain = np.concatenate(Ztrain)
     if Xtest is not None:
         if len(Xtest) > 0:
             num_test_reaches = len(Xtest)
@@ -590,7 +591,6 @@ def lr_decode_windowed(X, Z, lag, train_windows, test_windows, transition_times,
 
             assert(np.all([z1.shape[0] == z2.shape[0] for (z1, z2) in zip(Zpred_test_segmented, Ztest)]))
 
-            Ztest = np.concatenate(Ztest)
         else:
             Xtest = None
             Ztest = None
@@ -600,14 +600,14 @@ def lr_decode_windowed(X, Z, lag, train_windows, test_windows, transition_times,
 
         # Additionally calculate the individual MSE. Do not average over data points
         mse_train = [(z1 - z2)**2 for (z1, z2) in zip(Zpred_segmented, Ztrain)]
-
-
+        Ztrain = np.concatenate(Ztrain)
         lr_r2_pos = r2_score(Ztrain[..., 0:behavior_dim], Zpred[..., 0:behavior_dim])
         lr_r2_vel = r2_score(Ztrain[..., behavior_dim:2*behavior_dim], Zpred[..., behavior_dim:2*behavior_dim])
         lr_r2_acc = r2_score(Ztrain[..., 2*behavior_dim:], Zpred[..., 2*behavior_dim:])
 
         if Xtest is not None:
             mse_test = [(z1 - z2)**2 for (z1, z2) in zip(Zpred_test_segmented, Ztest)]
+            Ztest = np.concatenate(Ztest)
             lr_r2_post = r2_score(Ztest[..., 0:behavior_dim], Zpred_test[..., 0:behavior_dim])
             lr_r2_velt = r2_score(Ztest[..., behavior_dim:2*behavior_dim], Zpred_test[..., behavior_dim:2*behavior_dim])
             lr_r2_acct = r2_score(Ztest[..., 2*behavior_dim:], Zpred_test[..., 2*behavior_dim:])

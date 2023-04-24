@@ -90,7 +90,7 @@ if __name__ == '__main__':
     dpath = '/mnt/Secondary/data/sabes'
 
     DIM = 6
-    if not os.path.exists('jpcaAtmp_il12345.dat'):
+    if not os.path.exists('jpcaAtmp_il.dat'):
         # Now do subspace identification/VAR inference within these 
         # results = []
         resultsd3 = []
@@ -191,6 +191,12 @@ if __name__ == '__main__':
     d1 = []
     d2 = []
 
+    with open('jpcaAtmp_randomcontrol.dat', 'rb') as f:
+        control_results = pickle.load(f)
+    controldf = pd.DataFrame(control_results)
+
+    maxim_control = np.zeros((len(data_files), 1000))
+
     for i in range(len(data_files)):
         for j, dimreduc_method in enumerate(['LQGCA', 'PCA']):
             df_ = apply_df_filters(A_df, data_file=data_files[i], dimreduc_method=dimreduc_method)
@@ -216,6 +222,12 @@ if __name__ == '__main__':
             # maxim[i, j, 1] = np.sum(np.abs(np.imag(eigsd)))/2
             maxim[i, j, 0] = np.sum(np.abs(eigs))/2
 
+        for j in range(maxim_control.shape[-1]):
+            df_ = apply_df_filters(controldf, data_file=data_files[i], inner_rep=j)
+            assert(df_.shape[0] == 1)
+            eigs = df_.iloc[0]['jeig']
+            maxim_control[i, j] = np.sum(np.abs(eigs))/2
+        
     print(d1)
     print(d2)
 
@@ -376,7 +388,7 @@ if __name__ == '__main__':
 
     medianprops = dict(linewidth=0)
     #bplot = ax.boxplot([d_U[:, 2, 1], d_U[:, 3, 1]], patch_artist=True, medianprops=medianprops, notch=True, vert=False, showfliers=False)
-    bplot = ax.boxplot([maxim[:, 0, 0], maxim[:, 1, 0]], patch_artist=True, medianprops=medianprops, notch=True, vert=True, showfliers=False, widths=[0.25, 0.25])
+    bplot = ax.boxplot([maxim[:, 0, 0], maxim[:, 1, 0], maxim_control.ravel()], patch_artist=True, medianprops=medianprops, notch=True, vert=True, showfliers=False, widths=[0.25, 0.25, 0.25])
 
     # _, p = scipy.stats.wilcoxon(d_U[:, 2, 1], d_U[:, 3, 1])
     _, p = scipy.stats.wilcoxon(maxim[:, 0, 0], maxim[:, 1, 0], alternative='greater')
@@ -385,17 +397,17 @@ if __name__ == '__main__':
     method1 = 'FCCA'
     method2 = 'PCA'
  
-    ax.set_xticklabels([method1, method2], fontsize=12, rotation=45)
-    ax.set_yticks([0, 0.05, 0.1])
+    ax.set_xticklabels([method1, method2, 'Random'], fontsize=12, rotation=45)
+    ax.set_yticks([0.05, 0.15, 0.25])
     ax.tick_params(axis='both', labelsize=12)
     #ax.set_ylabel(r'$\sum_i Im(\lambda_i)$', fontsize=22)
     ax.set_ylabel('Strength of Rotational Component', fontsize=12)
-    ax.set_title('****', fontsize=14)
+    #ax.set_title('****', fontsize=14)
 
     #ax.invert_xaxis()
  
     # fill with colors
-    colors = ['red', 'black']
+    colors = ['red', 'black', 'blue']
     for patch, color in zip(bplot['boxes'], colors):
         patch.set_facecolor(color)
         patch.set_alpha(0.6)
@@ -403,4 +415,4 @@ if __name__ == '__main__':
     # ax.set_xlim([13, 0])
 
     fig.tight_layout()
-    fig.savefig('%s/jpca_eig_bplot_.pdf' % figpath, bbox_inches='tight', pad_inches=0)
+    fig.savefig('%s/jpca_eig_bplot_wcontrol.pdf' % figpath, bbox_inches='tight', pad_inches=0)

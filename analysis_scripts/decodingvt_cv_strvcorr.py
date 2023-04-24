@@ -9,6 +9,7 @@ import glob
 import pickle
 import pandas as pd
 from tqdm import tqdm
+from copy import deepcopy
 from sklearn.linear_model import LinearRegression
 
 import itertools
@@ -55,7 +56,7 @@ start_times = {'indy_20160426_01': 0,
 def gen_run(name, didxs=np.arange(35)):
     with open(name, 'w') as rsh:
         rsh.write('#!/bin/bash\n')
-        for di in didxs:qqq
+        for di in didxs:
             rsh.write('mpirun -n 8 python decodingvt_cv_strvcorr.py %d\n' % di)
 
 
@@ -114,7 +115,7 @@ def max_straight_dev(trajectory, start, end):
         
         straight_dev[j] = np.linalg.norm(np.array([x_int - trajectory[j, 0], y_int - trajectory[j, 1]]))
 
-    return np.max(straight_dev)
+    return np.max(straight_dev), straight_dev
 
 # Filter reaches by straight vs. corrective
 def filter_reach_type(dat, lag, decoding_window):
@@ -228,6 +229,7 @@ def behavioral_metrics(reach_set, transition_times, target_pairs, Z):
     # Calculate behavioral metrics
     dftsecondphase = []
     maxperpd = []
+    perpd = []
     nonmono = []
     secondphaseduration = []
 
@@ -272,12 +274,15 @@ def behavioral_metrics(reach_set, transition_times, target_pairs, Z):
         dftsecondphase.append(dt_[np.argwhere(pkassign)[0][0]])
 
         # (2) Maximum perpendicular distance from target
-        maxperpd.append(max_straight_dev(Z[tt[0]:tt[1], 0:2], target_pairs[reach_set[j]][0], target_pairs[reach_set[j]][1]))
+        msd, sd = max_straight_dev(Z[tt[0]:tt[1], 0:2], target_pairs[reach_set[j]][0], target_pairs[reach_set[j]][1])
+
+        maxperpd.append(msd)
+        perpd.append(sd)
 
         # (3) Duration of second phase
         secondphaseduration.append(np.argwhere(pkassign).squeeze().size)
 
-    return dftsecondphase, maxperpd, secondphaseduration
+    return dftsecondphase, maxperpd, secondphaseduration, perpd
 
 if __name__ == '__main__':
 
@@ -332,7 +337,7 @@ if __name__ == '__main__':
         #     sabes_df = pickle.load(f)
 
         sabes_df = pd.concat([indy_df, loco_df])
-
+    
         data_files = np.unique(sabes_df['data_file'].values)
         data_file = data_files[didx]
 
@@ -386,7 +391,7 @@ if __name__ == '__main__':
     # Distribute windows across ranks
     windows = np.array_split(windows, comm.size)[comm.rank]
     wr2 = np.zeros((len(windows), 5, 2, 6, 2))
-    ntr = np.zeros((len(windows), 5, 2 , 2))
+    ntr = np.zeros((len(windows), 5, 2 ,2))
 
     # Store regressors to do post-hoc r2 vs behavioral features variaiblity analysis
     regressors = np.zeros((len(windows), 5, 2, 2), dtype=object)    
@@ -394,15 +399,15 @@ if __name__ == '__main__':
     # Windows x folds x straight/corrective x train/test x metric
     behavioral_metrics_array = np.zeros((len(windows), 5, 2, 2, 3), dtype=object)
 
-    # Keep track of indices within transition timee
-    full_straight_reaches_train = []
-    full_corrective_reaches_train = []
+    # Keep track of indices within transition time
+    full_straight_reaches_train = np.zeros((len(windows), 5), dtype=object)
+    full_straight_reaches_test = np.zeros((len(windows), 5), dtype=object)
 
-    full_straight_reaches_test = []
-    full_corrective_reaches_test = []
+    full_corrective_reaches_train = np.zeros((len(windows), 5), dtype=object)
+    full_corrective_reaches_test = np.zeros((len(windows), 5), dtype=object)
 
-    MSEtr = np.zeros((len(windows), 5, 2), dtype=object)
-    MSEte = np.zeros((len(windows), 5, 2), dtype=object)
+    MSEtr = np.zeros((len(windows), 2, 5, 2), dtype=object)
+    MSEte = np.zeros((len(windows), 2, 5, 2), dtype=object)
 
     # Cross-validate the prediction
     for j, window in enumerate(windows):
@@ -426,12 +431,16 @@ if __name__ == '__main__':
                 r2pos, r2vel, r2acc, r2post, r2velt, r2acct, reg, ntr_, fitr, fite, msetr, msete = lr_decode_windowed(xpca, Z, lag, [window], [window], transition_times, train_idxs=valid_reaches[train_idxs],
                                                                                                     test_idxs=valid_reaches[test_idxs], decoding_window=decoding_window) 
 
-                # Narrow down the msetr and msete by the fitr/fite 
-                msetr = [msetr[i] for i in range(len(msetr)) if i in fitr]
-                msete = [msete[i] for i in range(len(msete)) if i in fite]
 
-                MSEtr[j, k, 0] = msetr
-                MSEte[j, k, 0] = msete
+                assert(len(fitr) == len(msetr))
+                assert(len(fite) == len(msete))
+
+                # Narrow down the msetr and msete by the fitr/fite 
+                # msetr = [msetr[i] for i in range(len(msetr)) if i in fitr]
+                # msete = [msete[i] for i in range(len(msete)) if i in fite]
+
+                MSEtr[j, k, fold, 0] = msetr
+                MSEte[j, k, fold, 0] = msete
 
                 wr2[j, fold, 0, :, k] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
                 ntr[j, fold, 0, k] = ntr_
@@ -446,19 +455,29 @@ if __name__ == '__main__':
                 assert(fitr == fitr2)
                 assert(fite == fite2)
 
+                assert(len(fitr) == len(msetr))
+                assert(len(fite) == len(msete))
 
                 # Narrow down the msetr and msete by the fitr/fite 
-                msetr = [msetr[i] for i in range(len(msetr)) if i in fitr]
-                msete = [msete[i] for i in range(len(msete)) if i in fite]
-                MSEtr[j, k, 1] = msetr
-                MSEte[j, k, 1] = msete
+                # msetr = [msetr[i] for i in range(len(msetr)) if i in fitr]
+                # msete = [msete[i] for i in range(len(msete)) if i in fite]
+
+                # try:
+                #     assert(len(fitr) == len(msetr))
+                #     assert(len(fite) == len(msete))
+                # except:
+                #     pdb.set_trace()
+
+                MSEtr[j, k, fold, 1] = msetr
+                MSEte[j, k, fold, 1] = msete
 
                 # Convert fitr and fite to an indexing of the original transition times
                 fitr = [valid_reaches[train_idxs][idx] for idx in fitr]
                 fite = [valid_reaches[test_idxs][idx] for idx in fite]
 
-                dftsecondphase_tr, maxperpd_tr, secondphaseduration_tr = behavioral_metrics(fitr, np.array(transition_times), target_pairs, Z)
-                dftsecondphase_te, maxperpd_te, secondphaseduration_te = behavioral_metrics(fite, np.array(transition_times), target_pairs, Z)
+
+                dftsecondphase_tr, maxperpd_tr, secondphaseduration_tr, _ = behavioral_metrics(fitr, np.array(transition_times), target_pairs, deepcopy(Z))
+                dftsecondphase_te, maxperpd_te, secondphaseduration_te, _ = behavioral_metrics(fite, np.array(transition_times), target_pairs, deepcopy(Z))
 
                 behavioral_metrics_array[j, fold, k, 0, 0] = dftsecondphase_tr
                 behavioral_metrics_array[j, fold, k, 0, 1] = maxperpd_tr
@@ -469,15 +488,15 @@ if __name__ == '__main__':
                 behavioral_metrics_array[j, fold, k, 1, 2] = secondphaseduration_te
 
                 if k == 0:
-                    full_straight_reaches_train.append(fitr)
-                    full_straight_reaches_test.append(fite)
+                    full_straight_reaches_train[j, fold] = fitr
+                    full_straight_reaches_test[j, fold] = fite
                 else:
-                    full_corrective_reaches_train.append(fitr)
-                    full_corrective_reaches_test.append(fite)
+                    full_corrective_reaches_train[j, fold] = fitr
+                    full_corrective_reaches_test[j, fold] = fite
 
 
     windows = np.array(windows)
-    dpath = '/home/akumar/nse/neural_control/data/decodingvt_cv_strcorr_regressorsave'
+    dpath = '/home/akumar/nse/neural_control/data/decodingvt_cv_strcorr_behaviorsave'
     #dpath = '/mnt/sdb1/nc_data/decodingvt'
     with open('%s/didx%d_rank%d.dat' % (dpath, didx, comm.rank), 'wb') as f:
         f.write(pickle.dumps(wr2))

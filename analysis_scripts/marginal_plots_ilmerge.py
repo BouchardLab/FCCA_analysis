@@ -175,10 +175,21 @@ if __name__ == '__main__':
     ax[1].fill_between(dim_vals, np.mean(fca_r2 - fca_marginal_r2, axis=0) + np.std(fca_r2 - fca_marginal_r2, axis=0)/np.sqrt(28),
                     np.mean(fca_r2 - fca_marginal_r2, axis=0) - np.std(fca_r2 - fca_marginal_r2, axis=0)/np.sqrt(28), color=colors[1], alpha=0.25)
 
+    xx = np.mean(fca_r2 - fca_marginal_r2, axis=0)
+    yy = np.mean(fca_r2, axis=0)
+
+
+
+
     ax[1].plot(dim_vals, np.mean(fca_r2 - fca_marginal_r2, axis=0), color=colors[1])
 
     ax[1].fill_between(dim_vals, np.mean(pca_r2 - pca_marginal_r2, axis=0) + np.std(pca_r2 - pca_marginal_r2, axis=0)/np.sqrt(28),
                     np.mean(pca_r2 - pca_marginal_r2, axis=0) - np.std(pca_r2 - pca_marginal_r2, axis=0)/np.sqrt(28), color=colors[0], alpha=0.25)
+
+    xx2 = np.mean(pca_r2 - pca_marginal_r2, axis=0)
+    yy2 = np.mean(pca_r2, axis=0)
+
+    pdb.set_trace()
 
     ax[1].plot(dim_vals, np.mean(pca_r2 - pca_marginal_r2, axis=0), color=colors[0])
     ax[1].set_xlabel('Dimension', fontsize=14)

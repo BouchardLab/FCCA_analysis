@@ -186,7 +186,7 @@ if __name__ == '__main__':
     # Sliding windows
     window_width = 2
     #window_centers = np.linspace(0, 35, 25)[0:9]
-    window_centers = np.arange(20)
+    window_centers = np.arange(30)
     windows = [(int(wc - window_width//2), int(wc + window_width//2)) for wc in window_centers]
 
     if comm.rank == 0:
@@ -219,7 +219,7 @@ if __name__ == '__main__':
 
         sabes_df = pd.concat([indy_df, loco_df])
 
-        data_files = np.unique(sabes_df['data_file'].values)1, 
+        data_files = np.unique(sabes_df['data_file'].values) 
         data_file = data_files[didx]
 
         # df = apply_df_filters(sabes_df, data_file=data_file, dim=dimval)
@@ -313,7 +313,8 @@ if __name__ == '__main__':
             tt_test_idxs = [idx for idx in range(len(transition_times)) if transition_times[idx][0] in test_idxs and transition_times[idx][1] in test_idxs]
 
             r2pos, r2vel, r2acc, r2post, r2velt, r2acct, reg, ntr_, fitr, fite, msetr, msete  = lr_decode_windowed(xpca, Z, lag, [window], [window], transition_times, train_idxs=tt_train_idxs,
-                                                                                                                   test_idxs=tt_test_idxs, decoding_window=decoding_window) 
+                                                                                                                test_idxs=tt_test_idxs, decoding_window=decoding_window) 
+            
             # Narrow down the msetr and msete by the fitr/fite 
             msetr = [msetr[i] for i in range(len(msetr)) if i in fitr]
             msete = [msete[i] for i in range(len(msete)) if i in fite]
@@ -327,8 +328,9 @@ if __name__ == '__main__':
 
             wr2[j, fold, 1, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
             # Narrow down the msetr and msete by the fitr/fite 
-            msetr = [msetr[i] for i in range(len(msetr)) if i in fitr]
+            msetr = [msetr[i] for i in range(len(msetr)) if i in fitr]    
             msete = [msete[i] for i in range(len(msete)) if i in fite]
+    
             MSEtr[j, fold, 1] = msetr
             MSEte[j, fold, 1] = msete
 
@@ -354,7 +356,7 @@ if __name__ == '__main__':
             behavioral_metrics_array[j, fold, 1, 3] = perpdte
 
     windows = np.array(windows)
-    dpath = '/home/akumar/nse/neural_control/data/decodingvt_cv_ttshift_behaviorsave'
+    dpath = '/home/akumar/nse/neural_control/data/decodingvt_cv_ttshift_lag2w30'
     #dpath = '/mnt/sdb1/nc_data/decodingvt'
     with open('%s/didx%d_rank%d_%s_%d.dat' % (dpath, didx, comm.rank, filter_string, measure_from_end), 'wb') as f:
         f.write(pickle.dumps(wr2))

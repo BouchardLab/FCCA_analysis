@@ -23,11 +23,11 @@ from decoders import lr_decode_windowed
 from mpi4py import MPI
 
 def gen_run(name, didxs=np.arange(8), error_filt_params=[(1., 'le')], reach_filt_params=[(0, 0, 'le')]):
-    combs = itertools.product(didxs, np.array([2, 6, 9, 13, 17, 21, 27]), ['S1', 'M1'])
+    combs = itertools.product(didxs, np.array([2, 6, 9]), ['S1', 'M1'])
     with open(name, 'w') as rsh:
         rsh.write('#!/bin/bash\n')
         for (di, dimval, reg) in combs:
-            rsh.write('mpirun -n 8 python decodingvt_cv_ilmerges1.py %d %d %s\n'
+            rsh.write('mpirun -n 8 python decodingvt_cv_ilmerge_cca.py %d %d %s\n'
                     % (di, dimval, reg))
 
 # Filter reaches by:
@@ -150,7 +150,7 @@ if __name__ == '__main__':
     # Sliding windows
     window_width = 2
     #window_centers = np.linspace(0, 35, 25)[0:9]
-    window_centers = np.arange(20)
+    window_centers = np.arange(30)
     windows = [(int(wc - window_width//2), int(wc + window_width//2)) for wc in window_centers]
 
     if comm.rank == 0:
@@ -224,7 +224,7 @@ if __name__ == '__main__':
     if args.region == 'S1':
         lag = 1
     else:
-        lag = 4
+        lag = 2
     decoding_window = 5
 
     # Distribute windows across ranks
@@ -242,13 +242,13 @@ if __name__ == '__main__':
             tt_train_idxs = [idx for idx in range(len(transition_times)) if transition_times[idx][0] in train_idxs and transition_times[idx][1] in train_idxs]
             tt_test_idxs = [idx for idx in range(len(transition_times)) if transition_times[idx][0] in test_idxs and transition_times[idx][1] in test_idxs]
 
-            r2pos, r2vel, r2acc, r2post, r2velt, r2acct, msetr, msete,  _, ntr = lr_decode_windowed(xcca, Z, lag, [window], [window], transition_times, train_idxs=tt_train_idxs,
+            r2pos, r2vel, r2acc, r2post, r2velt, r2acct, _, ntr, _, _, _, _ = lr_decode_windowed(xcca, Z, lag, [window], [window], transition_times, train_idxs=tt_train_idxs,
                                                                                                 test_idxs=tt_test_idxs, decoding_window=decoding_window) 
 
             wr2[j, fold, 0, :] = (r2pos, r2vel, r2acc, r2post, r2velt, r2acct)
 
     windows = np.array(windows)
-    dpath = '/home/akumar/nse/neural_control/data/decodingvt_cv_s1'
+    dpath = '/home/akumar/nse/neural_control/data/decodingvt_cv_s1_w30'
     #dpath = '/mnt/sdb1/nc_data/decodingvt'
     with open('%s/didx%d_rank%d_dim%d_r%s.dat' % (dpath, didx, comm.rank, dimval, args.region), 'wb') as f:
         f.write(pickle.dumps(wr2))

@@ -11,15 +11,17 @@ from mpi4py import MPI
 from mpi_utils.ndarray import Bcast_from_root
 from sklearn.model_selection import KFold
 from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
+from sklearn.decomposition import PCA, SparsePCA
 
 from pyuoi.linear_model.var import VAR
+from pyuoi.utils import BIC
 from dca.dca import DynamicalComponentsAnalysis as DCA
 from dca.cov_util import form_lag_matrix
 from dca_research.kca import KalmanComponentsAnalysis as KCA
 from dca_research.lqg import LQGComponentsAnalysis as LQGCA
 from dca.methods_comparison import SlowFeatureAnalysis as SFA
 
+from FCCA.proximal import FCCA_Prox, HoyerPCA
 
 # from neurosim.models.ssr import StateSpaceRealization as SSR
 
@@ -28,9 +30,16 @@ from schwimmbad import MPIPool, SerialPool
 #from decoders import kf_dim_analysis
 from loaders import load_sabes, load_shenoy, load_peanut, load_cv
 from mpi_loaders import mpi_load_shenoy
-from decoders import kf_decoder, lr_decoder
+from decoders import kf_decoder, lr_decoder, lr_residual_decoder
+from utils import apply_df_filters, calc_loadings
 import pdb
 import glob
+
+def float_to_string(f):
+    # Convert f to string
+    f = str(f)
+    # Replace decimal point with "dot"
+    return f.replace('.', 'dot')
 
 def load_preprocessed(path, **kwargs):
     with open(path, 'rb') as f:
@@ -38,7 +47,30 @@ def load_preprocessed(path, **kwargs):
     return dat
 
 LOADER_DICT = {'sabes': load_sabes, 'shenoy': mpi_load_shenoy, 'peanut': load_peanut, 'cv':load_cv, 'preprocessed': load_preprocessed}
-DECODER_DICT = {'lr': lr_decoder, 'kf': kf_decoder}
+DECODER_DICT = {'lr': lr_decoder, 'kf': kf_decoder, 'lr_residual': lr_residual_decoder}
+
+class SparsePCA_wrapper():
+    def __init__(self, d, alpha):
+        self.pcaobj = SparsePCA(alpha=alpha, n_components=d)
+        self.dim = d
+    
+    def fit(self, X):
+
+        Xtrans = self.pcaobj.fit_transform(X)
+        coef = self.pcaobj.components_.T
+        score = np.trace(np.cov(Xtrans, rowvar=False))/np.trace(np.cov(X, rowvar=False))        
+        return coef, score
+
+class HoyerPCA_wrapper():
+    def __init__(self, d, alpha, PCA_init=True):
+        self.pcaobj = HoyerPCA(alpha=alpha, n_components=d, PCA_init=PCA_init)
+        self.dim = d
+    
+    def fit(self, X):
+        Xtrans = self.pcaobj.fit_transform(X)
+        coef = self.pcaobj.components_.T
+        score = np.trace(np.cov(Xtrans, rowvar=False))/np.trace(np.cov(X, rowvar=False))        
+        return coef, score
 
 class PCA_wrapper():
 
@@ -82,50 +114,54 @@ class PCA_wrapper():
         else:
             return sum(self.pcaobj.explained_variance_ratio_[0:self.dim])
 
-DIMREDUC_DICT = {'PCA': PCA_wrapper, 'DCA': DCA, 'KCA': KCA, 'LQGCA': LQGCA}
+DIMREDUC_DICT = {'PCA': PCA_wrapper, 'DCA': DCA, 'KCA': KCA, 'LQGCA': LQGCA, 'FCCA_prox': FCCA_Prox, 'sPCA': HoyerPCA_wrapper}
 
-# Check which tasks have already been completed and prune from the task list
-def prune_dimreduc_tasks(tasks, results_folder):
+def prune_tasks(tasks, results_folder, task_format):
     # If the results file exists, there is nothing left to do
     if os.path.exists('%s.dat' % results_folder):
         return []
 
     completed_files = glob.glob('%s/*.dat' % results_folder)
-    dim_and_folds = []
+    param_tuples = []
     for completed_file in completed_files:
-        dim = int(completed_file.split('dim_')[1].split('_')[0])
-        fold_idx = int(completed_file.split('fold_')[1].split('.dat')[0])
-
-        dim_and_folds.append((dim, fold_idx))
+        if 'sparse' in task_format:
+            dim = int(completed_file.split('dim_')[1].split('_')[0])
+            fold_idx = int(completed_file.split('fold_')[1].split('_')[0])
+            alpha = completed_file.split('alpha_')[1].split('.dat')[0]
+            param_tuples.append((dim, fold_idx, alpha))
+        else:
+            dim = int(completed_file.split('dim_')[1].split('_')[0])
+            fold_idx = int(completed_file.split('fold_')[1].split('.dat')[0])
+            param_tuples.append((dim, fold_idx))            
 
     to_do = []
     for task in tasks:
-        train_test_tuple, dim, method, method_args, results_folder = task
-        fold_idx, train_idxs, test_idxs = train_test_tuple
+        if task_format == 'dimreduc':
+            train_test_tuple, dim, method, method_args, results_folder = task
+            fold_idx, train_idxs, test_idxs = train_test_tuple
 
-        if (dim, fold_idx) not in dim_and_folds:
-            to_do.append(task)
+            if (dim, fold_idx) not in param_tuples:
+                to_do.append(task)
 
-    return to_do
+        elif task_format == 'sparse_dimreduc':
+            train_test_tuple, dim, alpha, method, method_args, results_folder = task
+            fold_idx, train_idxs, test_idxs = train_test_tuple
+            if (dim, fold_idx, float_to_string(alpha)) not in param_tuples:
+                to_do.append(task)
 
-# Check which tasks have already been completed and prune from the task list
-def prune_decoding_tasks(tasks, results_folder):
+        elif task_format == 'decoding':
+            dim, fold_idx, \
+            dimreduc_results, decoder, results_folder = task
 
-    completed_files = glob.glob('%s/*.dat' % results_folder)
-    dim_and_folds = []
-    for completed_file in completed_files:
-        dim = int(completed_file.split('dim_')[1].split('_')[0])
-        fold_idx = int(completed_file.split('fold_')[1].split('.dat')[0])
+            if (dim, fold_idx) not in param_tuples:
+                to_do.append(task)
 
-        dim_and_folds.append((dim, fold_idx))
+        elif task_format == 'sparse_decoding':
+            dim, fold_idx, alpha, \
+            dimreduc_results, decoder, results_folder = task
 
-    to_do = []
-    for task in tasks:
-        dim, fold_idx, \
-        dimreduc_results, decoder, results_folder = task
-
-        if (dim, fold_idx) not in dim_and_folds:
-            to_do.append(task)
+            if (dim, fold_idx, float_to_string(alpha)) not in param_tuples:
+                to_do.append(task)
 
     return to_do
 
@@ -204,6 +240,9 @@ def load_data(loader, data_file, loader_args, comm, broadcast_behavior=False):
     # being sent again (which duplicates it)
     globals()['X'] =  spike_rates
 
+    # Add data file to globals - used as a reference to load the right FCCA coefficient file in sparse fits
+    globals()['data_file'] = data_file
+
     # Repeat for behavior, if requested
     if broadcast_behavior:
         if comm is None:
@@ -278,6 +317,95 @@ class PoolWorker():
 
         # Write to file, will later be concatenated by the main process
         file_name = 'dim_%d_fold_%d.dat' % (dim, fold_idx)
+        with open('%s/%s' % (results_folder, file_name), 'wb') as f:
+            f.write(pickle.dumps(results_dict))
+        # Cannot return None or else schwimmbad with hang (lol!)
+        return 0
+
+    def sparse_dimreduc(self, task_tuple):
+        ### NOTE: Somehow we have modified schwimmbad to pass in comm here
+        # This could be useful if subcommunicators are needed
+        if len(task_tuple) == 2:
+            task_tuple, comm = task_tuple
+        else:
+            comm = None             
+
+        train_test_tuple, dim, alpha, method, method_args, results_folder = task_tuple
+        # If method is sparse PCA, we can use the ordinary dimreduc worker
+        fold_idx, train_idxs, test_idxs = train_test_tuple
+        print('Dim: %d, Fold idx: %d, Alpha:%f' % (dim, fold_idx, alpha))
+        X = globals()['X']
+        print('X Dim: %d' % X.shape[1])
+        # dim_val is too high
+        dim_error = False
+        if np.ndim(X) == 2:
+            if X.shape[1] <= dim:
+                dim_error = True
+        else:
+            if X[0].shape[1] <= dim:
+                dim_error = True
+
+        if dim_error:
+            results_dict = {}
+            results_dict['dim'] = dim
+            results_dict['alpha'] = alpha
+            results_dict['fold_idx'] = fold_idx
+            results_dict['train_idxs'] = train_idxs
+            results_dict['test_idxs'] = test_idxs
+
+            results_dict['dimreduc_method'] = method
+            results_dict['dimreduc_args'] = method_args
+            results_dict['coef'] = np.nan
+            results_dict['score'] = np.nan               
+        else:
+            X_train = X[train_idxs, ...]
+
+            if X.dtype == 'object':
+                # subtract the cross condition mean
+                cross_cond_mean = np.mean([np.mean(x_, axis=0) for x_ in X_train], axis=0)      
+                X_train = [x_ - cross_cond_mean for x_ in X_train]
+            else:            
+                # Save memory
+                X_train -= np.concatenate(X_train).mean(axis=0, keepdims=True)
+                # X_mean = np.concatenate(X_train).mean(axis=0, keepdims=True)
+                # X_train_ctd = np.array([Xi - X_mean for Xi in X_train])
+
+            if method == 'FCCA_prox':
+                print('Loading coefficients...')
+                coef_file = method_args['coef_path']
+                coef_file += '/%s' % globals()['data_file'].split('/')[-1].split('.mat')[0]
+                coef_file += '.pkl'
+                with open(coef_file, 'rb') as f:
+                    coef_df = pickle.load(f)
+
+                # Coefficient files are separate by data file already
+                df = apply_df_filters(coef_df, dim=dim, fold_idx=fold_idx)
+                assert(df.shape[0] == 1)
+                V_init= df.iloc[0]['coef']
+                dimreducmodel = DIMREDUC_DICT[method](d=dim, alpha=alpha, V_init=V_init, **method_args)
+                dimreducmodel.estimate_data_statistics(X_train)
+                coef, score = dimreducmodel._fit_projection()
+            else:
+                dimreducmodel = DIMREDUC_DICT[method](d=dim, alpha=alpha, **method_args)
+                coef, score = dimreducmodel.fit(X_train)
+            
+        # Organize results in a dictionary structure
+        results_dict = {}
+        results_dict['dim'] = dim
+        results_dict['fold_idx'] = fold_idx
+        results_dict['alpha'] = alpha
+
+        results_dict['train_idxs'] = train_idxs
+        results_dict['test_idxs'] = test_idxs
+        results_dict['dimreduc_method'] = method
+        results_dict['dimreduc_args'] = method_args
+        results_dict['coef'] = coef
+        results_dict['score'] = score
+
+        # Write to file, will later be concatenated by the main process
+        # Hash alpha to string
+
+        file_name = 'dim_%d_fold_%d_alpha_%s.dat' % (dim, fold_idx, float_to_string(alpha))
         with open('%s/%s' % (results_folder, file_name), 'wb') as f:
             f.write(pickle.dumps(results_dict))
         # Cannot return None or else schwimmbad with hang (lol!)
@@ -365,16 +493,35 @@ class PoolWorker():
         else:
             comm = None               
 
-        dim_val, fold_idx, \
-        dimreduc_results, decoder, results_folder = task_tuple
+        # Sparse vs. non-sparse
+        if len(task_tuple) == 5:
+            dim_val, fold_idx, \
+            dimreduc_results, decoder, results_folder = task_tuple
+            print('Working on %d, %d' % (dim_val, fold_idx))
 
-        print('Working on %d, %d' % (dim_val, fold_idx))
+            # Find the index in dimreduc_results that matches the fold_idx and dim_vals
+            # that have been assigned to us
+            dim_fold_tuples = [(result['dim'], result['fold_idx']) for result in dimreduc_results]
+            dimreduc_idx = dim_fold_tuples.index((dim_val, fold_idx))
+            coef_ = dimreduc_results[dimreduc_idx]['coef']
 
-        # Find the index in dimreduc_results that matches the fold_idx and dim_vals
-        # that have been assigned to us
-        dim_fold_tuples = [(result['dim'], result['fold_idx']) for result in dimreduc_results]
-        dimreduc_idx = dim_fold_tuples.index((dim_val, fold_idx))
-        coef_ = dimreduc_results[dimreduc_idx]['coef']
+
+        elif len(task_tuple) == 6:
+            dim_val, fold_idx, alpha,\
+            dimreduc_results, decoder, results_folder = task_tuple
+            print('Working on %d, %d, Alpha:%f' % (dim_val, fold_idx, alpha))
+
+            # Find the index in dimreduc_results that matches the fold_idx and dim_vals
+            # that have been assigned to us
+            dim_fold_tuples = [(result['dim'], result['fold_idx'], result['alpha']) for result in dimreduc_results]
+            dimreduc_idx = dim_fold_tuples.index((dim_val, fold_idx, alpha))
+            coef_ = dimreduc_results[dimreduc_idx]['coef']
+
+        # Calculate a BIC score associated with the number of coefficients - only useful for the sparse case
+        # Some hardcoded thresholds
+        loadings = calc_loadings(coef_, normalize=False)
+        thresholds = [1e-3, 1e-4, 1e-5, 1e-6]
+        n_features = [np.sum(loadings > threshold) for threshold in thresholds]
 
         X = globals()['X']
         Y = globals()['Y']
@@ -410,7 +557,15 @@ class PoolWorker():
         print(Ytrain.shape)
         print(Ytest.shape)
 
-        r2_pos, r2_vel, r2_acc, decoder_obj = DECODER_DICT[decoder['method']](Xtest, Xtrain, Ytest, Ytrain, **decoder['args'])
+        r2_pos, r2_vel, r2_acc, decoder_obj, llp, llv, lla = DECODER_DICT[decoder['method']](Xtest, Xtrain, Ytest, Ytrain, **decoder['args'])
+        # calculate gaussian likelihood
+
+        # Calculate BIC score associated with position, acceleration, velocity, and the different thresholds
+        # for the number of features
+        BIC_dict = {}
+        BIC_dict['pos'] = [BIC(llp, n_features[i], Xtrain.shape[0]) for i in range(len(n_features))]
+        BIC_dict['vel'] = [BIC(llv, n_features[i], Xtrain.shape[0]) for i in range(len(n_features))]
+        BIC_dict['acc'] = [BIC(lla, n_features[i], Xtrain.shape[0]) for i in range(len(n_features))]
 
         # Compile results into a dictionary. First copy over everything from the dimreduc results so that we no longer
         # have to refer to the dimreduc results
@@ -421,15 +576,25 @@ class PoolWorker():
 
         results_dict['dim'] = dim_val
         results_dict['fold_idx'] = fold_idx
+        if len(task_tuple) == 6:
+            results_dict['alpha'] = alpha
         results_dict['decoder'] = decoder['method']
         results_dict['decoder_args'] = decoder['args']
         results_dict['decoder_obj'] = decoder_obj 
         results_dict['r2'] = [r2_pos, r2_vel, r2_acc]
+        results_dict['BIC'] = BIC_dict
+        results_dict['ll'] = [llp, llv, lla]
+        results_dict['thresholds'] = thresholds
 
         # Save to file
-        with open('%s/dim_%d_fold_%d.dat' % \
-                (results_folder, dim_val, fold_idx), 'wb') as f:
-            f.write(pickle.dumps(results_dict))
+        if len(task_tuple) == 5:
+            with open('%s/dim_%d_fold_%d.dat' % \
+                    (results_folder, dim_val, fold_idx), 'wb') as f:
+                f.write(pickle.dumps(results_dict))
+        else:
+            with open('%s/dim_%d_fold_%d_alpha_%s.dat' % \
+                    (results_folder, dim_val, fold_idx, float_to_string(alpha)), 'wb') as f:
+                f.write(pickle.dumps(results_dict))
 
 def parametric_dimreduc_(X, dim_vals, 
                         n_folds, comm,
@@ -517,6 +682,7 @@ def dimreduc_(dim_vals,
               n_folds, comm,
               method, method_args, 
               split_ranks, results_file,
+              alphas=None,
               resume=False):
 
     print(method)
@@ -545,11 +711,17 @@ def dimreduc_(dim_vals,
 
         data_tasks = [(idx,) + train_test_split for idx, train_test_split
                     in enumerate(train_test_idxs)]    
-        tasks = itertools.product(data_tasks, dim_vals)
-        tasks = [task + (method, method_args, results_folder) for task in tasks]
-        # Check which tasks have already been completed
-        if resume:
-            tasks = prune_dimreduc_tasks(tasks, results_folder)
+        if alphas is not None:
+            tasks = itertools.product(data_tasks, dim_vals, alphas)
+            tasks = [task + (method, method_args, results_folder) for task in tasks]        
+            if resume:
+                tasks = prune_tasks(tasks, results_folder)
+        else:
+            tasks = itertools.product(data_tasks, dim_vals)
+            tasks = [task + (method, method_args, results_folder) for task in tasks]
+            # Check which tasks have already been completed
+            if resume:
+                tasks = prune_tasks(tasks, results_folder)
 
     else:
         if comm.rank == 0:
@@ -566,11 +738,17 @@ def dimreduc_(dim_vals,
 
             data_tasks = [(idx,) + train_test_split for idx, train_test_split
                         in enumerate(train_test_idxs)]    
-            tasks = itertools.product(data_tasks, dim_vals)
-            tasks = [task + (method, method_args, results_folder) for task in tasks]
-            # Check which tasks have already been completed
-            if resume:
-                tasks = prune_dimreduc_tasks(tasks, results_folder)
+            if alphas is not None:
+                tasks = itertools.product(data_tasks, dim_vals, alphas)
+                tasks = [task + (method, method_args, results_folder) for task in tasks]     
+                if resume:
+                    tasks = prune_tasks(tasks, results_folder, 'sparse_dimreduc')
+            else:
+                tasks = itertools.product(data_tasks, dim_vals)
+                tasks = [task + (method, method_args, results_folder) for task in tasks]
+                # Check which tasks have already been completed
+                if resume:
+                    tasks = prune_tasks(tasks, results_folder, 'dimreduc')
         else:
             tasks = None
 
@@ -586,7 +764,10 @@ def dimreduc_(dim_vals,
         pool = SerialPool()
 
     if len(tasks) > 0:
-        pool.map(worker.dimreduc, tasks)
+        if alphas is not None:
+            pool.map(worker.sparse_dimreduc, tasks)
+        else:
+            pool.map(worker.dimreduc, tasks)
     pool.close()
 
     consolidate(results_folder, results_file, comm)
@@ -641,7 +822,7 @@ def decoding_(dimreduc_file, decoder, data_path,
         tasks = [task + (dimreduc_results, decoder, results_folder) 
                 for task in tasks]
         if resume:
-            tasks = prune_decoding_tasks(tasks, results_folder)
+            tasks = prune_tasks(tasks, results_folder)
     else:
         if comm.rank == 0:
             with open(dimreduc_file, 'rb') as f:
@@ -651,13 +832,24 @@ def decoding_(dimreduc_file, decoder, data_path,
             dim_vals = args['task_args']['dim_vals']
             n_folds = args['task_args']['n_folds']
             fold_idxs = np.arange(n_folds)
+            if 'alphas' in args['task_args'].keys():
+                alphas = args['task_args']['alphas']
+                tasks = itertools.product(dim_vals, fold_idxs, alphas)
+                # Assemble task arguments
+                tasks = [task + (dimreduc_results, decoder, results_folder) 
+                        for task in tasks]
+                if resume:
+                    tasks = prune_tasks(tasks, results_folder, 'sparse_decoding')
 
-            # Assemble task arguments
-            tasks = itertools.product(dim_vals, fold_idxs)
-            tasks = [task + (dimreduc_results, decoder, results_folder) 
-                    for task in tasks]
-            if resume:
-                tasks = prune_decoding_tasks(tasks, results_folder)
+            else:
+                tasks = itertools.product(dim_vals, fold_idxs)
+                fold_idxs = np.arange(n_folds)
+                # Assemble task arguments
+                tasks = [task + (dimreduc_results, decoder, results_folder) 
+                        for task in tasks]
+                if resume:
+                    tasks = prune_tasks(tasks, results_folder, 'decoding')
+
         else:
             tasks = None
 
@@ -727,11 +919,17 @@ def main(cmd_args, args):
 
     elif cmd_args.analysis_type == 'dimreduc':
         load_data(args['loader'], args['data_file'], args['loader_args'], comm)        
+        if 'alphas' in args['task_args'].keys():
+            alphas = args['task_args']['alphas']
+        else:
+            alphas = None
+
         split_ranks = comm_split(comm, ncomms)
         dimreduc_(dim_vals = args['task_args']['dim_vals'],
                   n_folds = args['task_args']['n_folds'], 
                   method = args['task_args']['dimreduc_method'],
                   method_args = args['task_args']['dimreduc_args'],
+                  alphas=alphas,
                   comm=comm, split_ranks=split_ranks,
                   results_file = args['results_file'],
                   resume=cmd_args.resume)

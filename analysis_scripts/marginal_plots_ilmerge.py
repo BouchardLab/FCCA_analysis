@@ -14,6 +14,7 @@ from sklearn.model_selection import KFold
 
 from scipy.ndimage import gaussian_filter1d
 from mpl_toolkits.axisartist.axislines import AxesZero
+import matplotlib.gridspec as gridspec
 
 from dca.methods_comparison import JPCA
 from pyuoi.linear_model.var  import VAR
@@ -63,7 +64,11 @@ if __name__ == '__main__':
     else:
         figpath = '/home/akumar/nse/neural_control/figs/loco_indy_merge'
 
-    fig, ax = plt.subplots(1, 2, figsize=(8, 4))
+    fig = plt.figure(figsize=(7, 5))
+    gs = gridspec.GridSpec(1, 2, width_ratios=[1, 5])
+    ax0 = plt.subplot(gs[0])
+    ax1 = plt.subplot(gs[1])
+    ax = [ax0, ax1]
 
     ################################ Decoding comparison #####################################
     # co-plot marginal decoding with the usual decoding
@@ -172,32 +177,38 @@ if __name__ == '__main__':
     pca_marginal_r2 = np.mean(r2_marginal[:, :, :, 1, 1], axis=2)
 
     # Panel 2: Paired differences
+
+
+
     ax[1].fill_between(dim_vals, np.mean(fca_r2 - fca_marginal_r2, axis=0) + np.std(fca_r2 - fca_marginal_r2, axis=0)/np.sqrt(28),
                     np.mean(fca_r2 - fca_marginal_r2, axis=0) - np.std(fca_r2 - fca_marginal_r2, axis=0)/np.sqrt(28), color=colors[1], alpha=0.25)
 
+    
     xx = np.mean(fca_r2 - fca_marginal_r2, axis=0)
     yy = np.mean(fca_r2, axis=0)
 
 
-
-
     ax[1].plot(dim_vals, np.mean(fca_r2 - fca_marginal_r2, axis=0), color=colors[1])
-
     ax[1].fill_between(dim_vals, np.mean(pca_r2 - pca_marginal_r2, axis=0) + np.std(pca_r2 - pca_marginal_r2, axis=0)/np.sqrt(28),
                     np.mean(pca_r2 - pca_marginal_r2, axis=0) - np.std(pca_r2 - pca_marginal_r2, axis=0)/np.sqrt(28), color=colors[0], alpha=0.25)
 
     xx2 = np.mean(pca_r2 - pca_marginal_r2, axis=0)
     yy2 = np.mean(pca_r2, axis=0)
 
-    pdb.set_trace()
-
     ax[1].plot(dim_vals, np.mean(pca_r2 - pca_marginal_r2, axis=0), color=colors[0])
-    ax[1].set_xlabel('Dimension', fontsize=14)
-    ax[1].set_ylabel(r'$\Delta$' + ' Velocity Decoding ' + r'$r^2$', fontsize=14)
-    ax[1].tick_params(axis='x', labelsize=12)
-    ax[1].tick_params(axis='y', labelsize=12)
+    ax[1].set_xlabel('Dimension', fontsize=18)
+    ax[1].set_ylabel(r'$\Delta$' + ' Velocity Decoding ' + r'$r^2$', fontsize=18, labelpad=-10)
+    ax[1].tick_params(axis='x', labelsize=16)
+    ax[1].tick_params(axis='y', labelsize=16)
+    ax[1].set_ylim([0, 0.2])
+    ax[1].set_yticks([0, 0.2])
+    ax[1].legend(['FBC/FBCm', 'FFC/FFCm'], loc='lower right', fontsize=14)
 
-    ax[1].legend(['FCCA/FCCAm', 'PCA/PCAm'], loc='lower right', fontsize=12)
+    # Print out statistical test at d = 6
+    print(np.mean(fca_r2[:, 5] - fca_marginal_r2[:, 5]) - np.mean(pca_r2[:, 5] - pca_marginal_r2[:, 5]))
+    stat, p = scipy.stats.wilcoxon(fca_r2[:, 5] - fca_marginal_r2[:, 5], pca_r2[:, 5] - pca_marginal_r2[:, 5], alternative='greater')
+    print('Delta decoding p=%f' % p)
+
     #ax[0].set_title('Paired differences in decoding', fontsize=16)
 
     #fig.savefig('%s/decoding_differences.pdf' % figpath, bbox_inches='tight', pad_inches=0)
@@ -240,29 +251,39 @@ if __name__ == '__main__':
             ss_angles[i, f, 3, :] = scipy.linalg.subspace_angles(dffca_marginal.iloc[0]['coef'], dfpca_marginal.iloc[0]['coef'][:, 0:dim])
 
     
-
     stat, p = scipy.stats.wilcoxon(np.mean(ss_angles[:, :, 2, :], axis=-1).ravel(), np.mean(ss_angles[:, :, 1, :], axis=-1).ravel(), alternative='greater')
     print(p)
     print('\n')
 
-    print('FCCA/PCA: %f rads' % np.median(np.mean(ss_angles[:, :, 0, :], axis=-1).ravel()))
-    print('PCA/PCAm: %f rads' % np.median(np.mean(ss_angles[:, :, 1, :], axis=-1).ravel()))
-    print('FCCA/FCCAm: %f rads' % np.median(np.mean(ss_angles[:, :, 2, :], axis=-1).ravel()))
-    print('FCCAm/PCAm: %f rads' % np.median(np.mean(ss_angles[:, :, 3, :], axis=-1).ravel()))
+    print('FFC/FBC: %f rads' % np.median(np.mean(ss_angles[:, :, 0, :], axis=-1).ravel()))
+    print('FBC/FBCm: %f rads' % np.median(np.mean(ss_angles[:, :, 2, :], axis=-1).ravel()))
+    print('FFC/FFCm: %f rads' % np.median(np.mean(ss_angles[:, :, 1, :], axis=-1).ravel()))
+    print('FFCm/FBCm: %f rads' % np.median(np.mean(ss_angles[:, :, 3, :], axis=-1).ravel()))
 
-    medianprops = dict(linewidth=0)
-    bplot = ax[0].boxplot([np.mean(ss_angles[:, :, 0, :], axis=-1).ravel(), np.mean(ss_angles[:, :, 1, :], axis=-1).ravel(), np.mean(ss_angles[:, :, 2, :], axis=-1).ravel(), np.mean(ss_angles[:, :, 3, :], axis=-1).ravel()], 
-                  patch_artist=True, medianprops=medianprops, notch=True, showfliers=False)
-    ax[0].set_xticklabels(['FCCA/PCA', 'PCA/PCAm', 'FCCA/FCCAm', 'FCCAm/PCAm'], rotation=45)
+    # Significance test FFC/FBC vs. FBC/FBCm
+    stat, p = scipy.stats.wilcoxon(np.mean(ss_angles[:, :, 2, :], axis=-1).ravel(), np.mean(ss_angles[:, :, 0, :], axis=-1).ravel(), alternative='greater')
+    print(p)
+    print('\n')
+    
+
+    medianprops = dict(linewidth=1, color='b')
+    whiskerprops = dict(linewidth=0)
+    bplot = ax[0].boxplot([np.mean(ss_angles[:, :, 2, :], axis=-1).ravel(), np.mean(ss_angles[:, :, 1, :], axis=-1).ravel()], 
+                  patch_artist=True, medianprops=medianprops, notch=False, showfliers=False,
+                  whiskerprops=whiskerprops, showcaps=False)
+    ax[0].set_xticklabels(['FBC/FBCm', 'FFC/FFCm'], rotation=30)
+    for label in ax[0].get_xticklabels():
+        label.set_horizontalalignment('center')
     ax[0].set_ylim([0, np.pi/2])
     ax[0].set_yticks([0, np.pi/8, np.pi/4, 3 * np.pi/8, np.pi/2])
     ax[0].set_yticklabels(['0', r'$\pi/8$', r'$\pi/4$', r'$3\pi/8$', r'$\pi/2$'])
-    ax[0].set_ylabel('Subspace angles (rads)')
+    ax[0].tick_params(axis='both', labelsize=16)
+    ax[0].set_ylabel('Subspace angles (rads)', fontsize=18)
 
-    colors = ['k', 'k', 'k', 'k']
+    colors = ['r', 'k']
     for patch, color in zip(bplot['boxes'], colors):
         patch.set_facecolor(color)
-        patch.set_alpha(0.75)
+        patch.set_alpha(0.5)
 
     #ax[2].set_xlim([0, np.pi/2])
     #ax[2].tick_params(axis='both', labelsize=12)
@@ -274,3 +295,24 @@ if __name__ == '__main__':
 
     fig.tight_layout()
     fig.savefig('%s/marginal_summary.pdf' % figpath, bbox_inches='tight', pad_inches=0)
+
+
+    # Additional figure for grant
+    fig, ax = plt.subplots(1, 1, figsize=(1, 5))
+    medianprops = dict(linewidth=1, color='b')
+    bplot = ax.boxplot([np.mean(ss_angles[:, :, 2, :], axis=-1).ravel(), np.mean(ss_angles[:, :, 1, :], axis=-1).ravel()], 
+                       patch_artist=True, medianprops=medianprops, notch=False, showfliers=False, 
+                        whiskerprops=whiskerprops, showcaps=False)
+    #ax.set_xticklabels(['FFC/FFCm', 'FBC/FBCm'], rotation=45)
+    ax.set_xticklabels([])
+    ax.set_ylim([0, np.pi/2])
+    ax.set_yticks([0, np.pi/8, np.pi/4, 3 * np.pi/8, np.pi/2])
+    ax.set_yticklabels(['0', r'$\pi/8$', r'$\pi/4$', r'$3\pi/8$', r'$\pi/2$'])
+    ax.set_ylabel('Subspace angles (rads)')
+    colors = ['r', 'k']
+    for patch, color in zip(bplot['boxes'], colors):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.5)
+
+    #fig.tight_layout()
+    fig.savefig('%s/marginal_ssa_grant.pdf' % figpath)

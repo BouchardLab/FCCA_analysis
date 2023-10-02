@@ -429,49 +429,61 @@ def box_plots(method1, method2, tau_max, mag, dyn_range, stats, p, path):
     avg_dyn_range2 = np.mean(dyn_range[:, 1, :], axis=-1)
 
     # Boxplots
-    fig, ax = plt.subplots(1, 3, figsize=(5, 4))
+    fig, ax = plt.subplots(1, 2, figsize=(3.67, 4))
 
-    medianprops = dict(linewidth=0)
+    medianprops = dict(linewidth=1, color='b')
+    whiskerprops = dict(linewidth=0)
 
     # Plot dynamic arange, averag magnitude, and then entropy in order
 
     # Instead of PI, make boxplots of the dynamimc range (Z-scored)
-    bplot1 = ax[0].boxplot([avg_dyn_range1, avg_dyn_range2], patch_artist=True, medianprops=medianprops, notch=True, showfliers=False, vert=True)
-    bplot2 = ax[1].boxplot([avg_mag1, avg_mag2], patch_artist=True, medianprops=medianprops, notch=True, showfliers=False, vert=True)
-    bplot3 = ax[2].boxplot([tau_h1, tau_h2], patch_artist=True, medianprops=medianprops, notch=True, showfliers=False, vert=True)
+    # bplot1 = ax[0].boxplot([avg_dyn_range1, avg_dyn_range2], patch_artist=True, medianprops=medianprops, notch=False, 
+    #                        showfliers=False, vert=True, whiskerprops=whiskerprops)
+    bplot2 = ax[0].boxplot([avg_mag1, avg_mag2], patch_artist=True, medianprops=medianprops, 
+                           notch=False, showfliers=False, vert=True, whiskerprops=whiskerprops, showcaps=False)
+    bplot3 = ax[1].boxplot([tau_h1, tau_h2], patch_artist=True, medianprops=medianprops, notch=False, 
+                           showfliers=False, vert=True, whiskerprops=whiskerprops, showcaps=False)
 
-    ax[0].set_xticklabels([method1, method2])
-    ax[1].set_xticklabels([method1, method2])
-    ax[2].set_xticklabels([method1, method2])
+    # Violin plot
 
-    ax[2].set_yticks([0, -15, -30])
+
+    # ax[0].set_xticklabels([method1, method2])
+    # ax[1].set_xticklabels([method1, method2])
+    # ax[2].set_xticklabels([method1, method2])
+
+    ax[1].set_yticks([10, -10, -30])
+    ax[1].set_ylim([-30, 10])
+    ax[0].set_yticks([0.1, 0.25, 0.4])
+    ax[0].set_ylim([0.1, 0.4])
     # ax[1].set_xticks([15, 30, 45])
     #ax[0].set_title(r'$\tau$' + '-entropy, p=%f' % p[2], fontsize=10)
     #ax[1].set_title('Avg. magnitude, stat: p=%f' % p[3], fontsize=10)
     
-    # Get the minimum significance level consistent with a multiple comparisons test
-    pvec = np.sort(p[2:])
-    a1 = pvec[0] * 3
-    a2 = pvec[1] * 2
-    a3 = pvec[2]
-    print(max([a1, a2, a3]))
-    ax[0].set_title('*****', fontsize=10)
-    ax[1].set_title('*****', fontsize=10)
-    ax[2].set_title('*****', fontsize=10)
+    # Get the minimum significance level consistent with a multiple comparisons test - looking at just the 
+    # average magnitude and entropy of c.c.
+    pvec = np.sort(p[2:4])
+    a1 = pvec[0] * 2
+    a2 = pvec[1]
+    print([a1, a2])
+
+    # ax[0].set_title('*****', fontsize=10)
+    # ax[1].set_title('*****', fontsize=10)
+    # ax[2].set_title('*****', fontsize=10)
     
-    ax[0].set_ylabel('Avg. Dynamic Range', fontsize=12)
-    ax[1].set_ylabel('Average peak cross-corr.', fontsize=12)
-    ax[2].set_ylabel('Entropy of peak cross-corr. times', fontsize=12)
+    ax[0].set_ylabel('Average Peak C.C.', fontsize=16)
+    ax[1].set_ylabel('Peak C.C. Time Entropy', fontsize=16)
+    for a in ax:
+        a.tick_params(axis='both', labelsize=14)
 
     # fill with colors
     colors = ['red', 'black']
-    for bplot in (bplot1, bplot2, bplot3):
+    for bplot in (bplot2, bplot3):
         for patch, color in zip(bplot['boxes'], colors):
             patch.set_facecolor(color)
             patch.set_alpha(0.75)
 
     fig.tight_layout()
-    fig.savefig('%s/boxplots_with_dynrange.pdf' % path, bbox_inches='tight', pad_inches=0)
+    fig.savefig('%s/boxplots_with_dynrange.pdf' % path, pad_inches=0.1, bbox_inches='tight')
     
 if __name__ == '__main__':
 

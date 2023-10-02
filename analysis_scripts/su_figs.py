@@ -234,8 +234,8 @@ if __name__ == '__main__':
 
         ax.set_xlim([-5, 0.1])
         ax.set_ylim([-5, 0.1])
-        ax.set_xlabel('Log FCCA Leverage Score', fontsize=14)
-        ax.set_ylabel('Log PCA Leverage Score', fontsize=14)
+        ax.set_xlabel('Log FBC Leverage Score', fontsize=14)
+        ax.set_ylabel('Log FFC Leverage Score', fontsize=14)
         ax.tick_params(axis='both', labelsize=12)
 
         # Annotate with the spearman-r
@@ -300,7 +300,7 @@ if __name__ == '__main__':
         ax.set_xlabel('Time (s)', fontsize=12)
         ax.xaxis.set_label_coords(1.05, 0.56)
         ax.set_ylabel('Z-scored Response', fontsize=12)
-        ax.set_title('Top PCA units', fontsize=14)
+        ax.set_title('Top FFC units', fontsize=14)
 
         fig.savefig('%s/topPCApsth.pdf' % figpath, bbox_inches='tight', pad_inches=0)
 
@@ -344,7 +344,7 @@ if __name__ == '__main__':
         ax.set_xlabel('Time (s)', fontsize=12)
         ax.xaxis.set_label_coords(1.05, 0.56)
         ax.set_ylabel('Z-scored Response', fontsize=12)
-        ax.set_title('Top FCCA units', fontsize=14)
+        ax.set_title('Top FBC units', fontsize=14)
 
         fig.savefig('%s/topFCCApsth.pdf' % figpath, bbox_inches='tight', pad_inches=0)
 
@@ -471,12 +471,12 @@ if __name__ == '__main__':
 
         ax.tick_params(axis='y', labelsize=12)
 
-        ax.text(0, 1.15, 'FCCA loadings', fontsize=12, ha='left', va='bottom')
+        ax.text(0, 1.15, 'FBC loadings', fontsize=12, ha='left', va='bottom')
         # ax.annotate("", xy=(-0.5, -0.3), xytext=(3.5, -0.3), 
         #             xycoords='data', textcoords='data',
         #             arrowprops=dict(arrowstyle='-', connectionstyle='bar,fraction=-0.1'))
 
-        ax.text(4.75, 1.15, 'PCA loadings', fontsize=12, ha='left', va='bottom')
+        ax.text(4.75, 1.15, 'FFC loadings', fontsize=12, ha='left', va='bottom')
         # ax.annotate("", xy=(4.5, -0.3), xytext=(8.5, -0.3), 
         #             xycoords='data', textcoords='data',
         #             arrowprops=dict(arrowstyle='-', connectionstyle='bar,fraction=-0.1'))

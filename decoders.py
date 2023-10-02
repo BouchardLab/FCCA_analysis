@@ -11,6 +11,7 @@ from sklearn.decomposition import PCA
 from pykalman import KalmanFilter
 
 #from pyuoi.linear_model.var import VAR
+from pyuoi.utils import log_likelihood_glm
 from dca.dca import DynamicalComponentsAnalysis as DCA
 from dca.cov_util import (calc_cross_cov_mats_from_data, 
                           calc_pi_from_cross_cov_mats, form_lag_matrix)
@@ -243,19 +244,37 @@ def lr_decoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=
     decodingregressor.fit(Xtrain, Ztrain)
     Zpred = decodingregressor.predict(Xtest)
 
+    # Calculate log likelihood of the training fit
+    Zpred_train = decodingregressor.predict(Xtrain)
     if include_velocity and include_acc:
+        logll_pos = log_likelihood_glm('normal', Ztrain[..., 0:behavior_dim], Zpred_train[..., 0:behavior_dim])
+        logll_vel = log_likelihood_glm('normal', Ztrain[..., behavior_dim:2*behavior_dim], Zpred_train[..., behavior_dim:2*behavior_dim])
+        logll_acc = log_likelihood_glm('normal', Ztrain[..., 2*behavior_dim:], Zpred_train[..., 2*behavior_dim:])
+
         lr_r2_pos = r2_score(Ztest[..., 0:behavior_dim], Zpred[..., 0:behavior_dim])
         lr_r2_vel = r2_score(Ztest[..., behavior_dim:2*behavior_dim], Zpred[..., behavior_dim:2*behavior_dim])
         lr_r2_acc = r2_score(Ztest[..., 2*behavior_dim:], Zpred[..., 2*behavior_dim:])
 
-        return lr_r2_pos, lr_r2_vel, lr_r2_acc, decodingregressor
+        return lr_r2_pos, lr_r2_vel, lr_r2_acc, decodingregressor, logll_pos, logll_vel, logll_acc
     elif include_velocity:
+
+        logll_pos = log_likelihood_glm('normal', Ztrain[..., 0:behavior_dim], Zpred_train[..., 0:behavior_dim])
+        logll_vel = log_likelihood_glm('normal', Ztrain[..., behavior_dim:2*behavior_dim], Zpred_train[..., behavior_dim:2*behavior_dim])
+
+
         lr_r2_pos = r2_score(Ztest[..., 0:behavior_dim], Zpred[..., 0:behavior_dim])
         lr_r2_vel = r2_score(Ztest[..., behavior_dim:2*behavior_dim], Zpred[..., behavior_dim:2*behavior_dim])
-        return lr_r2_pos, lr_r2_vel, decodingregressor
+
+
+        return lr_r2_pos, lr_r2_vel, decodingregressor, logll_pos, logll_vel
     else:
+
+        logll_pos = log_likelihood_glm('normal', Ztrain[..., 0:behavior_dim], Zpred_train[..., 0:behavior_dim])
+        logll_vel = log_likelihood_glm('normal', Ztrain[..., behavior_dim:2*behavior_dim], Zpred_train[..., behavior_dim:2*behavior_dim])
+
+        lr_r2_pos = r2_score(Ztest[..., 0:behavior_dim], Zpred[..., 0:behavior_dim])
         lr_r2_pos = r2_score(Ztest, Zpred)
-        return lr_r2_pos, decodingregressor
+        return lr_r2_pos, decodingregressor, logll_pos
 
 def _draw_bootstrap_sample(rng, X, y):
     sample_indices = np.arange(X.shape[0])
@@ -621,4 +640,41 @@ def lr_decode_windowed(X, Z, lag, train_windows, test_windows, transition_times,
     elif include_velocity:
         raise NotImplementedError
     else:
-        raise NotImplementedError
+        raise 
+
+############################### Residual decoding #########################################
+# Sequentually regress position onto velocity, predict the reisudals, and then regress position and 
+# acceleration onto acceleration, and then predict the residuals
+def lr_residual_decoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=1):
+
+    behavior_dim = Ztrain[0].shape[-1]
+
+    Xtest, Xtrain, Ztest, Ztrain = lr_preprocess(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, 
+                                                 decoding_window, include_velocity=True, include_acc=True)
+    posdecodingregressor = LinearRegression(fit_intercept=True)
+    # No train test split here
+    pos = np.vstack([Ztrain[:, 0:2], Ztest[:, 0:2]])
+    vel = np.vstack([Ztrain[:, 2:4], Ztest[:, 2:4]])
+    acc = np.vstack([Ztrain[:, 4:], Ztest[:, 4:]])
+    pos_vel = np.hstack([pos, vel])
+    posdecodingregressor.fit(pos, vel)
+
+    # Extract the residuals
+    vel_residuals = vel - posdecodingregressor.predict(pos)
+
+    posveldecodingregressor = LinearRegression(fit_intercept=True)
+    posveldecodingregressor.fit(pos_vel, acc)
+    # Extract the residuals
+    acc_residuals = acc - posveldecodingregressor.predict(pos_vel)
+
+    velresidual_decoder = LinearRegression(fit_intercept=True)
+    velresidual_decoder.fit(Xtrain, vel_residuals[:Xtrain.shape[0], :])
+    vel_residuals_pred = velresidual_decoder.predict(Xtest)
+    lr_r2_vel = r2_score(vel_residuals[Xtrain.shape[0]:, :], vel_residuals_pred)
+
+    accresidual_decoder = LinearRegression(fit_intercept=True)
+    accresidual_decoder.fit(Xtrain, acc_residuals[:Xtrain.shape[0], :])
+    acc_residuals_pred = accresidual_decoder.predict(Xtest)
+    lr_r2_acc = r2_score(acc_residuals[Xtrain.shape[0]:, :], acc_residuals_pred)       
+
+    return np.nan, lr_r2_vel, lr_r2_acc, np.nan, np.nan, np.nan, np.nan

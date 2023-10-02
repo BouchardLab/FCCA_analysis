@@ -24,8 +24,8 @@ from decoders import lr_decoder
 if __name__ == '__main__':
 
     M1 = False
-    S1 = True
-
+    S1 = False
+    HPC = True 
 
     # Where to save?
     if len(sys.argv) > 1:
@@ -135,7 +135,7 @@ if __name__ == '__main__':
         ax.set_yticks([0., 0.2, 0.4])
 
         #ax.legend(['FCCA', 'PCA'], fontsize=10, bbox_to_anchor=(0.32, 1.01), frameon=False)
-        ax.legend(['FCCA', 'PCA'], fontsize=10, loc='upper left', frameon=False)
+        ax.legend(['FBC', 'FFC'], fontsize=10, loc='upper left', frameon=False)
 
         #ax.legend(['FCCA', 'PCA'], fontsize=14, loc='lower right', frameon=False)
         
@@ -159,7 +159,7 @@ if __name__ == '__main__':
         axin.set_ylabel('Decoding AUC', fontsize=10)
         axin.set_xlim([-0.5, 1.5])
         axin.set_xticks([0, 1])
-        axin.set_xticklabels(['PCA', 'FCCA'], fontsize=10)
+        axin.set_xticklabels(['FFC', 'FBC'], fontsize=10)
         axin.set_title('****')
         #fig.tight_layout()
         fig.savefig('%s/indy_vel_decoding.pdf' % figpath, bbox_inches='tight', pad_inches=0)
@@ -183,7 +183,7 @@ if __name__ == '__main__':
         ax.vlines(6, 0, np.mean(fca_r2 - pca_r2, axis=0)[5], linestyles='dashed', color='blue')
         ax.hlines(np.mean(fca_r2 - pca_r2, axis=0)[5], 0, 6, linestyles='dashed', color='blue')
         ax.set_xlim([1, 30])
-        ax.set_xticks([1, 15, 30])
+        ax.set_xticks([1, 6, 15, 30])
         ax.set_yticks([0., 0.12])
         ax.set_ylim([0, 0.125])
 
@@ -272,7 +272,7 @@ if __name__ == '__main__':
         ax.tick_params(axis='x', labelsize=16)
         ax.tick_params(axis='y', labelsize=16)
 
-        ax.legend(['FCCA', 'PCA'], fontsize=10, bbox_to_anchor=(0.32, 1.01), frameon=False)
+        ax.legend(['FBC', 'FFC'], fontsize=10, bbox_to_anchor=(0.32, 1.01), frameon=False)
         ax.set_yticks([0., 0.25])
         ax.set_xticks([1., 15, 30])
         #ax.legend(['FCCA', 'PCA'], fontsize=14, loc='lower right', frameon=False)
@@ -297,7 +297,7 @@ if __name__ == '__main__':
         axin.set_ylabel('Decoding AUC', fontsize=10)
         axin.set_xlim([-0.5, 1.5])
         axin.set_xticks([0, 1])
-        axin.set_xticklabels(['PCA', 'FCCA'], fontsize=10)
+        axin.set_xticklabels(['FFC', 'FBC'], fontsize=10)
         axin.set_title('***')
         #fig.tight_layout()
         fig.savefig('%s/S1_vel_decoding.pdf' % figpath, bbox_inches='tight', pad_inches=0)
@@ -320,7 +320,7 @@ if __name__ == '__main__':
 
         ax.set_yticks([0., 0.1])
         ax.set_ylim([0., 0.11])
-        ax.set_xticks([1, 15, 30])
+        ax.set_xticks([1, 6, 15, 30])
 
         ax.vlines(6, 0, np.mean(fca_r2 - pca_r2, axis=0)[5], linestyles='dashed', color='blue')
         ax.hlines(np.mean(fca_r2 - pca_r2, axis=0)[5], 0, 6, linestyles='dashed', color='blue')
@@ -329,151 +329,136 @@ if __name__ == '__main__':
 
     # fig.savefig('/home/akumar/pCloudDrive/Documents/tex/Cosyne23/fig2.pdf')
 
+    ################################## Old code for peanut ############################################################
 
+    if HPC:
+        with open('/mnt/Secondary/data/postprocessed/peanut_decoding_df.dat', 'rb') as f:
+            peanut_decoding_df = pickle.load(f)
 
+        peanut_decoding_df = pd.DataFrame(peanut_decoding_df)
+        pdf_fca = apply_df_filters(peanut_decoding_df, dimreduc_method='LQGCA', dimreduc_args={'T':3, 'loss_type':'trace', 'n_init':5})
 
+        #fig, ax = plt.subplots(4, 2, figsize=(10, 12))
+        epochs = np.unique(peanut_decoding_df['epoch'].values)
+        folds = np.unique(peanut_decoding_df['fold_idx'].values)
+        dimvals = np.unique(peanut_decoding_df['dim'].values)
+        decoder_args = [{'trainlag': 0, 'testlag': 0, 'decoding_window': 6}, {'trainlag': 3, 'testlag': 3, 'decoding_window': 6}, {'trainlag': 6, 'testlag': 6, 'decoding_window': 6}]
 
+        r2 = np.zeros((epochs.size, len(decoder_args), folds.size, dimvals.size))
 
+        for i, epoch in enumerate(epochs):
+            for k, da in enumerate(decoder_args):
+                for f, fold in enumerate(folds):
+                    for d, dimval in enumerate(dimvals):            
+                        df_ = apply_df_filters(pdf_fca, epoch=epoch, fold_idx=fold, dim=dimval, decoder_args=da)
+                        try:
+                            assert(df_.shape[0] == 1)
+                        except:
+                            pdb.set_trace()
+                        r2[i, k, f, d] = df_.iloc[0]['r2'][0]
 
-
-
-
-
-
-
-
-    ################################### Old code for peanut ############################################################
-
-    # with open('/mnt/Secondary/data/postprocessed/peanut_decoding_df.dat', 'rb') as f:
-    #     peanut_decoding_df = pickle.load(f)
-
-    # peanut_decoding_df = pd.DataFrame(peanut_decoding_df)
-    # pdf_fca = apply_df_filters(peanut_decoding_df, dimreduc_method='LQGCA', dimreduc_args={'T':3, 'loss_type':'trace', 'n_init':5})
-
-    # #fig, ax = plt.subplots(4, 2, figsize=(10, 12))
-    # epochs = np.unique(peanut_decoding_df['epoch'].values)
-    # folds = np.unique(peanut_decoding_df['fold_idx'].values)
-    # dimvals = np.unique(peanut_decoding_df['dim'].values)
-    # decoder_args = [{'trainlag': 0, 'testlag': 0, 'decoding_window': 6}, {'trainlag': 3, 'testlag': 3, 'decoding_window': 6}, {'trainlag': 6, 'testlag': 6, 'decoding_window': 6}]
-
-    # r2 = np.zeros((epochs.size, len(decoder_args), folds.size, dimvals.size))
-
-    # for i, epoch in enumerate(epochs):
-    #     for k, da in enumerate(decoder_args):
-    #         for f, fold in enumerate(folds):
-    #             for d, dimval in enumerate(dimvals):            
-    #                 df_ = apply_df_filters(pdf_fca, epoch=epoch, fold_idx=fold, dim=dimval, decoder_args=da)
-    #                 try:
-    #                     assert(df_.shape[0] == 1)
-    #                 except:
-    #                     pdb.set_trace()
-    #                 r2[i, k, f, d] = df_.iloc[0]['r2'][0]
-
+        
+        # Something went wrong with PCA results, just run them here real quick:
+        pca_r2 = np.zeros((epochs.size, len(decoder_args), 5, dimvals.size))
+        for i, epoch in tqdm(enumerate(epochs)):
+            dat = load_peanut('/mnt/Secondary/data/peanut/data_dict_peanut_day14.obj', epoch=epoch, spike_threshold=200)
+            X = dat['spike_rates']
+            Y = dat['behavior']
+            train_test = list(KFold(n_splits=5).split(X))
+            for k, da in enumerate([decoder_args[0]]):
+                for f, fold in enumerate(folds):
+                    for d, dimval in enumerate(dimvals):            
     
-    # # Something went wrong with PCA results, just run them here real quick:
-    # pca_r2 = np.zeros((epochs.size, len(decoder_args), 5, dimvals.size))
-    # for i, epoch in tqdm(enumerate(epochs)):
-    #     dat = load_peanut('/mnt/Secondary/data/peanut/data_dict_peanut_day14.obj', epoch=epoch, spike_threshold=200)
-    #     X = dat['spike_rates']
-    #     Y = dat['behavior']
-    #     train_test = list(KFold(n_splits=5).split(X))
-    #     for k, da in enumerate([decoder_args[0]]):
-    #         for f, fold in enumerate(folds):
-    #             for d, dimval in enumerate(dimvals):            
- 
-    #                 df_ = apply_df_filters(peanut_decoding_df, epoch=epoch, dimreduc_method='PCA', fold_idx=fold, dim=dimval, decoder_args=da)
-    #                 try:
-    #                     coef = df_.iloc[0]['coef'][:, 0:dimval]         
-    #                 except:
-    #                     pdb.set_trace()
+                        df_ = apply_df_filters(peanut_decoding_df, epoch=epoch, dimreduc_method='PCA', fold_idx=fold, dim=dimval, decoder_args=da)
+                        try:
+                            coef = df_.iloc[0]['coef'][:, 0:dimval]         
+                        except:
+                            pdb.set_trace()
 
-    #                 train_idxs = train_test[f][0]
-    #                 test_idxs = train_test[f][1]
+                        train_idxs = train_test[f][0]
+                        test_idxs = train_test[f][1]
 
-    #                 Ytrain = Y[train_idxs]
-    #                 Ytest = Y[test_idxs]
+                        Ytrain = Y[train_idxs]
+                        Ytest = Y[test_idxs]
 
-    #                 Xtrain = X[train_idxs] @ coef
-    #                 Xtest = X[test_idxs] @ coef
+                        Xtrain = X[train_idxs] @ coef
+                        Xtest = X[test_idxs] @ coef
 
+                        r2_pos, r2_vel, r2_acc, decoder_obj, _, _, _ = lr_decoder(Xtest, Xtrain, Ytest, Ytrain, **da)
 
-    #                 try:
-    #                     r2_pos, r2_vel, r2_acc, decoder_obj = lr_decoder(Xtest, Xtrain, Ytest, Ytrain, **da)
-    #                 except:
-    #                     pdb.set_trace()
-    #                 pca_r2[i, k, f, d] = r2_pos
+                        pca_r2[i, k, f, d] = r2_pos
 
-    # #fig, ax = plt.subplots(4, 2, figsize=(8, 16))
-    # fig, ax = plt.subplots(1, 1, figsize=(4, 4))
+        #fig, ax = plt.subplots(4, 2, figsize=(8, 16))
+        fig, ax = plt.subplots(1, 1, figsize=(4, 4))
 
-    # # Average over folds
-    # fca_r2 = np.mean(r2[:, 0, :, :], axis=1)
-    # pca_r2 = np.mean(pca_r2[:, 0, :, :], axis=1)
+        # Average over folds
+        fca_r2 = np.mean(r2[:, 0, :, :], axis=1)
+        pca_r2 = np.mean(pca_r2[:, 0, :, :], axis=1)
 
-    # fca_mean = np.mean(fca_r2, axis=0)
+        fca_mean = np.mean(fca_r2, axis=0)
 
-    # # Move the fold indices up and then reshape to calc std
-    # fca_std = np.std(fca_r2, axis=0)/np.sqrt(8)
+        # Move the fold indices up and then reshape to calc std
+        fca_std = np.std(fca_r2, axis=0)/np.sqrt(8)
 
-    # pca_mean = np.mean(pca_r2, axis=0)
-    # pca_std = np.std(pca_r2, axis=0)/np.sqrt(8)
+        pca_mean = np.mean(pca_r2, axis=0)
+        pca_std = np.std(pca_r2, axis=0)/np.sqrt(8)
 
-    # ax.fill_between(np.arange(1, 31), fca_mean - fca_std, fca_mean + fca_std, color='r', alpha=0.25)
-    # ax.fill_between(np.arange(1, 31), pca_mean - pca_std, pca_mean + pca_std, color='k', alpha=0.25)
+        ax.fill_between(np.arange(1, 31), fca_mean - fca_std, fca_mean + fca_std, color='r', alpha=0.25)
+        ax.fill_between(np.arange(1, 31), pca_mean - pca_std, pca_mean + pca_std, color='k', alpha=0.25)
 
-    # ax.plot(np.arange(1, 31), fca_mean, color='r')
-    # ax.plot(np.arange(1, 31), pca_mean, color='k')
+        ax.plot(np.arange(1, 31), fca_mean, color='r')
+        ax.plot(np.arange(1, 31), pca_mean, color='k')
 
-    # ax.legend(['FCCA', 'PCA'], fontsize=10, bbox_to_anchor=(0.32, 1.01), frameon=False)
+        ax.legend(['FCCA', 'PCA'], fontsize=10, bbox_to_anchor=(0.32, 1.01), frameon=False)
 
-    # # # Inset that shows the paired differences
-    # axin = ax.inset_axes([0.6, 0.1, 0.35, 0.35])
-    # #axin = ax.inset_axes([0.125, -0.924, 0.75, 0.75])
+        # # Inset that shows the paired differences
+        axin = ax.inset_axes([0.6, 0.1, 0.35, 0.35])
+        #axin = ax.inset_axes([0.125, -0.924, 0.75, 0.75])
 
-    # pca_auc = np.sum(pca_r2, axis=1)
-    # fca_auc = np.sum(fca_r2, axis=1)
+        pca_auc = np.sum(pca_r2, axis=1)
+        fca_auc = np.sum(fca_r2, axis=1)
 
-    # # Run a signed rank test
-    # _, p = scipy.stats.wilcoxon(pca_auc, fca_auc, alternative='less')
-    # print(p)
+        # Run a signed rank test
+        _, p = scipy.stats.wilcoxon(pca_auc, fca_auc, alternative='less')
+        print(p)
 
-    # axin.scatter(np.zeros(8), pca_auc, color='k', alpha=0.75, s=3)
-    # axin.scatter(np.ones(8), fca_auc, color='r', alpha=0.75, s=3)
-    # axin.plot(np.array([(0, 1) for _ in range(pca_r2.shape[0])]).T, np.array([(y1, y2) for y1, y2 in zip(np.sum(pca_r2, axis=1), np.sum(fca_r2, axis=1))]).T, color='k', alpha=0.5)
-    # axin.set_yticks([])
-    # axin.set_ylabel('Decoding AUC', fontsize=10)
-    # axin.set_xlim([-0.5, 1.5])
-    # axin.set_xticks([0, 1])
-    # axin.set_xticklabels(['PCA', 'FCCA'], fontsize=10)
-    # axin.set_title('**')
-    # ax.set_title('Rat Hippocampus', fontsize=18)
-    # ax.set_xlabel('Dimension', fontsize=18)
-    # ax.set_ylabel('Position Prediction ' + r'$r^2$', fontsize=18)    
-    # ax.tick_params(axis='both', labelsize=16)
+        axin.scatter(np.zeros(8), pca_auc, color='k', alpha=0.75, s=3)
+        axin.scatter(np.ones(8), fca_auc, color='r', alpha=0.75, s=3)
+        axin.plot(np.array([(0, 1) for _ in range(pca_r2.shape[0])]).T, np.array([(y1, y2) for y1, y2 in zip(np.sum(pca_r2, axis=1), np.sum(fca_r2, axis=1))]).T, color='k', alpha=0.5)
+        axin.set_yticks([])
+        axin.set_ylabel('Decoding AUC', fontsize=10)
+        axin.set_xlim([-0.5, 1.5])
+        axin.set_xticks([0, 1])
+        axin.set_xticklabels(['PCA', 'FCCA'], fontsize=10)
+        axin.set_title('**')
+        ax.set_title('Rat Hippocampus', fontsize=18)
+        ax.set_xlabel('Dimension', fontsize=18)
+        ax.set_ylabel('Position Prediction ' + r'$r^2$', fontsize=18)    
+        ax.tick_params(axis='both', labelsize=16)
 
-    # #fig.tight_layout()
-    # fig.savefig('%s/peanut_decoding.pdf' % figpath, bbox_inches='tight', pad_inches=0)
+        #fig.tight_layout()
+        fig.savefig('%s/peanut_decoding.pdf' % figpath, bbox_inches='tight', pad_inches=0)
 
-    # fig, ax = plt.subplots(1, 1, figsize=(4, 4))
-    # # Plot of the differences across dimensions
-    # dim_vals = np.arange(1, 31)
-    # ax.fill_between(dim_vals, np.mean(fca_r2 - pca_r2, axis=0) + np.std(fca_r2 - pca_r2, axis=0)/np.sqrt(35),
-    #                 np.mean(fca_r2 - pca_r2, axis=0) - np.std(fca_r2 - pca_r2, axis=0)/np.sqrt(35), color='blue', alpha=0.25)
-    # ax.plot(dim_vals, np.mean(fca_r2 - pca_r2, axis=0), color='blue')
+        fig, ax = plt.subplots(1, 1, figsize=(4, 4))
+        # Plot of the differences across dimensions
+        dim_vals = np.arange(1, 31)
+        ax.fill_between(dim_vals, np.mean(fca_r2 - pca_r2, axis=0) + np.std(fca_r2 - pca_r2, axis=0)/np.sqrt(35),
+                        np.mean(fca_r2 - pca_r2, axis=0) - np.std(fca_r2 - pca_r2, axis=0)/np.sqrt(35), color='blue', alpha=0.25)
+        ax.plot(dim_vals, np.mean(fca_r2 - pca_r2, axis=0), color='blue')
 
-    # max_delta = np.max(np.mean(fca_r2 - pca_r2, axis=0))
-    # fractional_delta = max_delta/np.mean(pca_r2, axis=0)[np.argmax(np.mean(fca_r2 - pca_r2, axis=0))]
+        max_delta = np.max(np.mean(fca_r2 - pca_r2, axis=0))
+        fractional_delta = max_delta/np.mean(pca_r2, axis=0)[np.argmax(np.mean(fca_r2 - pca_r2, axis=0))]
 
-    # print('HPC peak fractional improvement:%f' % fractional_delta)
+        print('HPC peak fractional improvement:%f' % fractional_delta)
 
-    # import matplotlib.ticker as tick
+        import matplotlib.ticker as tick
 
-    # d = np.mean(fca_r2 - pca_r2, axis=0)
-    # ax.set_xlabel('Dimension', fontsize=18)
-    # ax.set_ylabel(r'$\Delta$' + ' Position Prediction ' + r'$r^2$', fontsize=18)
-    # ax.tick_params(axis='x', labelsize=16)
-    # ax.tick_params(axis='y', labelsize=16)
-    # ax.vlines(dim_vals[np.argmax(np.mean(fca_r2 - pca_r2, axis=0))], 0, np.max(np.mean(fca_r2 - pca_r2, axis=0)), linestyles='dashed', color='blue')
-    # ax.yaxis.set_major_formatter(tick.FormatStrFormatter('%.2f'))
-    # fig.savefig('%s/peanut_decoding_delta.pdf' % figpath, bbox_inches='tight', pad_inches=0)
+        d = np.mean(fca_r2 - pca_r2, axis=0)
+        ax.set_xlabel('Dimension', fontsize=18)
+        ax.set_ylabel(r'$\Delta$' + ' Position Prediction ' + r'$r^2$', fontsize=18)
+        ax.tick_params(axis='x', labelsize=16)
+        ax.tick_params(axis='y', labelsize=16)
+        ax.vlines(dim_vals[np.argmax(np.mean(fca_r2 - pca_r2, axis=0))], 0, np.max(np.mean(fca_r2 - pca_r2, axis=0)), linestyles='dashed', color='blue')
+        ax.yaxis.set_major_formatter(tick.FormatStrFormatter('%.2f'))
+        fig.savefig('%s/peanut_decoding_delta.pdf' % figpath, bbox_inches='tight', pad_inches=0)
 

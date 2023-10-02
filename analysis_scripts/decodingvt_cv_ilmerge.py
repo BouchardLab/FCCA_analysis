@@ -142,7 +142,11 @@ def filter_reach_type(dat, reach_filter, error_percentile=0., error_op='ge', q=1
             window_in_reach = t0 + w[1] < t1
         return window_in_reach
 
+    # Hard-coding window filter to only reflect length 20 reaches
+    # Otherwise, using width 30 windows gives rise to too few reaches for good results
     if windows is not None:
+        window_centers = np.arange(20)
+        windows = [(int(wc - window_width//2), int(wc + window_width//2)) for wc in window_centers]
         window_filter = []
         for i, window in enumerate(windows):
             window_filter.append([])
@@ -284,7 +288,7 @@ if __name__ == '__main__':
     filter_string = comm.bcast(filter_string)
     target_pairs = comm.bcast(target_pairs)
 
-    lag = 4
+    lag = 2
     decoding_window = 5
 
     # Distribute windows across ranks

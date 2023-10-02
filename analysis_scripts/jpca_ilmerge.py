@@ -15,7 +15,7 @@ from sklearn.metrics import r2_score
 from scipy.ndimage import gaussian_filter1d
 from mpl_toolkits.axisartist.axislines import AxesZero
 
-from dca.methods_comparison import JPCA
+from dca.methods_comparison import JPCA, symmJPCA
 from pyuoi.linear_model.var  import VAR
 from neurosim.models.var import form_companion
 
@@ -56,6 +56,10 @@ start_times = {'indy_20160426_01': 0,
 
 if __name__ == '__main__':
 
+    calcs = False
+    rot_trajectories = False
+    dyn_range = False
+    boxplots = True
 
     # Where to save?
     if len(sys.argv) > 1:
@@ -90,14 +94,13 @@ if __name__ == '__main__':
     dpath = '/mnt/Secondary/data/sabes'
 
     DIM = 6
-    if not os.path.exists('jpcaAtmp_il.dat'):
+    if calcs:
         # Now do subspace identification/VAR inference within these 
         # results = []
         resultsd3 = []
         for i, data_file in tqdm(enumerate(data_files)):
             dat = load_sabes('%s/%s' % (dpath, data_file))
             dat = reach_segment_sabes(dat, data_file=data_file.split('.mat')[0])
-
             y = np.squeeze(dat['spike_rates'])
             for dimreduc_method in ['LQGCA', 'PCA']:
                 df_ = apply_df_filters(sabes_df, data_file=data_file, fold_idx=0, dim=DIM, dimreduc_method=dimreduc_method)
@@ -111,91 +114,105 @@ if __name__ == '__main__':
 
                 # Project data
                 yproj = y @ V
+                yproj = np.array([yproj[t0:t0+20] for t0, t1 in dat['transition_times'] if t1 - t0 > 21])
+
+                # Z-score
+                #yproj = gaussian_filter1d(yproj, sigma=2, axis=1)
+                # Center and normalize trajectories
+                #yproj = np.array([yproj[i, :] - yproj[i, 0] for i in range(yproj.shape[0])])
+                # yproj = np.array([StandardScaler().fit_transform(yproj[i, :]) for i in range(yproj.shape[0])])
+                #trajectory /= np.linalg.norm(trajectory)
+
+                # Rotate trajectory so that the first 5 timesteps all go off at the same angle
+                # for i in range(yproj.shape[0]):
+                #     theta0 = np.arctan2(yproj[i, 15, 1], yproj[i, 15, 0])
+
+                #     # Rotate *clockwise* by theta
+                #     R = lambda theta: np.array([[np.cos(-1*theta), -np.sin(-theta)], \
+                #                                 [np.sin(-theta), np.cos(theta)]])        
+                #     yproj[i] = np.array([R(theta0 - np.pi/4) @ t[0:2] for t in yproj[i]])
+
+                # x_ = yproj[:-1, :]
+                # y_ = yproj[1:, :]
+                # x_ = StandardScaler().fit_transform(x_)
+                # y_ = StandardScaler().fit_transform(y_)
+                # linmodel = LinearRegression()
+                # linmodel.fit(x_, y_)
+                # print('%s\n' % dimreduc_method)
+                # print(np.linalg.eigvals(linmodel.coef_).astype(str))
 
                 # Segment reaches into minimum length 30 timesteps reaches
-                yproj = np.array([yproj[t0:t0+20] for t0, t1 in dat['transition_times'] if t1 - t0 > 21])
                 # yproj = gaussian_filter1d(yproj, sigma=5)
 
                 result_ = {}
                 result_['data_file'] = data_file
                 result_['dimreduc_method'] = dimreduc_method
 
-                # # Fit subspace identification
-                # ssid = SubspaceIdentification()
-                # A, C, Cbar, L0, Q, R, S = ssid.identify(yproj, order=6)
+                # 3 fits: 
+                # 3. Look at symmetric vs. asymmetric portions of regression onto differences
 
-                # result_['ssid_A'] = A
-
-                # Fit VAR(1) and VAR(2)
-                # varmodel = VAR(estimator='ols', order=1)
-                # varmodel.fit(yproj)
-                # result_['var1_A'] = form_companion(varmodel.coef_) 
-                # result_['var1score'] = varmodel.score(yproj)
-
-                # varmodel = VAR(estimator='ols', order=1, self_regress=True)
-                # varmodel.fit(yproj)
-                # result_['var1_A_sr'] = form_companion(varmodel.coef_) 
-                # result_['var1srscore'] = varmodel.score(yproj)
-
-
-                # varmodel = VAR(estimator='ols', order=2)
-                # varmodel.fit(yproj)
-                # result_['var2_A'] = form_companion(varmodel.coef_) 
-                # result_['var2score'] = varmodel.score(yproj)
-
-                # varmodel = VAR(estimator='ols', order=2, self_regress=True)
-                # varmodel.fit(yproj)
-                # result_['var2_A_sr'] = form_companion(varmodel.coef_) 
-                # result_['var2srscore'] = varmodel.score(yproj)
-
-                # varmodel = VAR(estimator='ols', order=3)
-                # varmodel.fit(yproj)
-                # result_['var3_A'] = form_companion(varmodel.coef_) 
-                # result_['var3score'] = varmodel.score(yproj)
-
-                # varmodel = VAR(estimator='ols', order=3, self_regress=True)
-                # varmodel.fit(yproj)
-                # result_['var3_A_sr'] = form_companion(varmodel.coef_) 
-                # result_['var3srscore'] = varmodel.score(yproj)
-
-
-                # x = np.array([StandardScaler().fit_transform(dat['spike_rates'][j, ...]) 
-                #             for j in range(dat['spike_rates'].shape[0])])
-                #yproj = StandardScaler().fit_transform(yproj)
                 jpca = JPCA(n_components=DIM, mean_subtract=False)
                 jpca.fit(yproj)
                 
-                #linmodel = LinearRegression()
-                #linmodel.fit(yproj[:-1, :], np.diff(yproj, axis=0))
+                # Look at only the initial phase of the trajectory
+                # # x_ = yproj[:, :-1, :].reshape((-1, 6))
+                # # x_ = StandardScaler().fit_transform(x_)
+                # # y_ = np.diff(yproj, axis=1).reshape((-1, 6))
+                # # y_ = StandardScaler().fit_transform(y_)
+                # x_ = yproj[:, :-1, :].reshape((-1, 6))
+                # y_ = yproj[:, 1:, :].reshape((-1, 6))
+                # x_ = StandardScaler().fit_transform(x_)
+                # y_ = StandardScaler().fit_transform(y_)
 
-                ypred = yproj[:-1, :] @ jpca.M_skew
-                r2_jpca = jpca.r2_score
+                # #linmodel.fit(yproj[:, :-1, :].reshape((-1, 6)), np.diff(yproj, axis=1).reshape((-1, 6)))
+                # linmodel.fit(x_, y_)
+
+                # ypred = yproj[:, :-1, :] @ jpca.M_skew
+                #r2_jpca = jpca.r2_score
                 #r2_linear = linmodel.score(yproj[:-1, :], np.diff(yproj, axis=0))
-                r2_linear = np.nan
-                print('method: %s, r2_jpca: %f, r2_lin: %f' % (dimreduc_method, r2_jpca, r2_linear))
+                #r2_linear = np.nan
+                #print('method: %s, r2_jpca: %f, r2_lin: %f' % (dimreduc_method, r2_jpca, r2_linear))
                 result_['jeig'] = jpca.eigen_vals_
+
+                # Record the average dynamic range
+                # yprojcent = np.array([y_ - y_[0:1, :] for y_ in yproj])
+                yprojcent = yproj
+
+                # For each time step, calculate the least squares projection of the state vector onto the next step
+                a = np.eye(DIM)
+                for ii in range(yprojcent.shape[1] - 1):
+                    lmodel = LinearRegression(fit_intercept=False)
+                    lmodel.fit(yprojcent[:, ii, :], yprojcent[:, ii + 1, :])
+                    a = a @ lmodel.coef_
+
+                print('%s\n' % dimreduc_method)
+                print(np.abs(np.linalg.eigvals(a)))
+
+                dyn_range = np.array([np.max(np.abs(y_)[:, j]) for y_ in yprojcent for j in range(DIM)])
+                result_['dyn_range'] = np.mean(dyn_range)
+                #print(jpca.eigen_vals_)
+                #print(np.mean(dyn_range))
                 resultsd3.append(result_)
 
-
-        with open('jpcaAtmp_il.dat', 'wb') as f:
-            f.write(pickle.dumps(resultsd3))            
+        # with open('jpcaAtmp_il2.dat', 'wb') as f:
+        #     f.write(pickle.dumps(resultsd3))            
     else:
-        with open('jpcaAtmp_il.dat', 'rb') as f:
+        with open('jpcaAtmp_il2.dat', 'rb') as f:
             resultsd3 = pickle.load(f)
 
     A_df = pd.DataFrame(resultsd3)
 
     d_U = np.zeros((len(data_files), 2, 3))
-    maxim = np.zeros((len(data_files), 2, 2))
+    maxim = np.zeros((len(data_files), 2, 3))
 
     d1 = []
     d2 = []
 
-    with open('jpcaAtmp_randomcontrol.dat', 'rb') as f:
+    with open('jpcaAtmp_randomcontrol2.dat', 'rb') as f:
         control_results = pickle.load(f)
     controldf = pd.DataFrame(control_results)
 
-    maxim_control = np.zeros((len(data_files), 1000))
+    maxim_control = np.zeros((len(data_files), 1000, 3))
 
     for i in range(len(data_files)):
         for j, dimreduc_method in enumerate(['LQGCA', 'PCA']):
@@ -219,200 +236,347 @@ if __name__ == '__main__':
             # if j == 3:
             #     d2.append(np.linalg.det(U))
 
-            # maxim[i, j, 1] = np.sum(np.abs(np.imag(eigsd)))/2
             maxim[i, j, 0] = np.sum(np.abs(eigs))/2
 
-        for j in range(maxim_control.shape[-1]):
+            maxim[i, j, 1] = np.sum(np.abs(eigs))/2
+            maxim[i, j, 2] = df_.iloc[0]['dyn_range']
+
+        for j in range(maxim_control.shape[1]):
             df_ = apply_df_filters(controldf, data_file=data_files[i], inner_rep=j)
             assert(df_.shape[0] == 1)
+
             eigs = df_.iloc[0]['jeig']
-            maxim_control[i, j] = np.sum(np.abs(eigs))/2
-        
+            maxim_control[i, j, 0] = np.sum(np.abs(eigs))/2
+            maxim_control[i, j, 1] = np.sum(np.abs(eigs))/2
+            eigs = df_.iloc[0]['dyn_range']
+            maxim_control[i, j, 2] = eigs
+
     print(d1)
     print(d2)
 
     # Next up:
     # Rotational trajectories.
-    
-    # (5., 7., 10., 12.. 16. 17. 19. 20. 25..)
-    data_file = data_files[25]
+    if rot_trajectories:
+        # (5., 7., 10., 12.. 16. 17. 19. 20. 25..)
+        data_file = data_files[25]
 
-    df1 = apply_df_filters(sabes_df, data_file=data_file, fold_idx=0, dim=6, dimreduc_method='PCA')
-    df2 = apply_df_filters(sabes_df, data_file=data_file, fold_idx=0, dim=6, dimreduc_method='LQGCA', 
-                           dimreduc_args={'T':3, 'loss_type':'trace', 'n_init':10})
-
-
-    datpath = '/mnt/Secondary/data/sabes'
-    dat = load_sabes('%s/%s' % (datpath, data_file))
-    dat = reach_segment_sabes(dat, data_file=data_file.split('.mat')[0])
-
-    # x = np.array([StandardScaler().fit_transform(dat['spike_rates'][j, ...]) 
-    #             for j in range(dat['spike_rates'].shape[0])])
-    x = dat['spike_rates']
-    xpca = x @ df1.iloc[0]['coef'][:, 0:6]
-    xdca = x @ df2.iloc[0]['coef']
-
-    jpca1 = JPCA(n_components=6, mean_subtract=False)
-    jpca1.fit(xpca)
-
-    jpca2 = JPCA(n_components=6, mean_subtract=False)
-    jpca2.fit(xdca)
-
-    xpca_j = jpca1.transform(xpca)
-    xdca_j = jpca2.transform(xdca)
+        df1 = apply_df_filters(sabes_df, data_file=data_file, fold_idx=0, dim=6, dimreduc_method='PCA')
+        df2 = apply_df_filters(sabes_df, data_file=data_file, fold_idx=0, dim=6, dimreduc_method='LQGCA', 
+                            dimreduc_args={'T':3, 'loss_type':'trace', 'n_init':10})
 
 
-    # Measure the straight_dev of the projected neural data
-    pca_straightdev = np.zeros(len(dat['target_pairs']))
-    dca_straightdev = np.zeros(len(dat['target_pairs']))
-    transition_times = dat['transition_times']
-    for i in range(len(dat['target_pairs'])):
-        
-        trajectory = gaussian_filter1d(xpca_j[0, transition_times[i][0]:transition_times[i][1]], 
-                                    sigma=5, axis=0)
-        trajectory -= trajectory[0]
-        
-        start = trajectory[0, :]
-        end = trajectory[-1, :]
-        
-        pca_straightdev[i] = measure_straight_dev(trajectory, start, end)
+        datpath = '/mnt/Secondary/data/sabes'
+        dat = load_sabes('%s/%s' % (datpath, data_file))
+        dat = reach_segment_sabes(dat, data_file=data_file.split('.mat')[0])
 
-        trajectory = gaussian_filter1d(xdca_j[0, transition_times[i][0]:transition_times[i][1]], 
-                                    sigma=5, axis=0)
-        trajectory -= trajectory[0]
-        
-        start = trajectory[0, :]
-        end = trajectory[-1, :]
-        dca_straightdev[i] = measure_straight_dev(trajectory, start, end)
-        
+        # x = np.array([StandardScaler().fit_transform(dat['spike_rates'][j, ...]) 
+        #             for j in range(dat['spike_rates'].shape[0])])
+        x = dat['spike_rates']
+        xpca = x @ df1.iloc[0]['coef'][:, 0:6]
+        xdca = x @ df2.iloc[0]['coef']
 
-    #pca_devorder = np.arange(pca_straightdev.size)
-    #dca_devorder = np.arange(dca_straightdev.size)    
-    pca_devorder = np.argsort(pca_straightdev)[::-1]
-    dca_devorder = np.argsort(dca_straightdev)[::-1]
+        jpca1 = JPCA(n_components=6, mean_subtract=False)
+        jpca1.fit(xpca)
+
+        jpca2 = JPCA(n_components=6, mean_subtract=False)
+        jpca2.fit(xdca)
+
+        xpca_j = jpca1.transform(xpca)
+        xdca_j = jpca2.transform(xdca)
 
 
-    ############## Trajectory Plots #################
-    fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+        # Measure the straight_dev of the projected neural data
+        pca_straightdev = np.zeros(len(dat['target_pairs']))
+        dca_straightdev = np.zeros(len(dat['target_pairs']))
+        transition_times = dat['transition_times']
+        for i in range(len(dat['target_pairs'])):
+            
+            trajectory = gaussian_filter1d(xpca_j[0, transition_times[i][0]:transition_times[i][1]], 
+                                        sigma=5, axis=0)
+            trajectory -= trajectory[0]
+            
+            start = trajectory[0, :]
+            end = trajectory[-1, :]
+            
+            pca_straightdev[i] = measure_straight_dev(trajectory, start, end)
 
-    for i in range(0, 25):
-        
-        idx = dca_devorder[i]
+            trajectory = gaussian_filter1d(xdca_j[0, transition_times[i][0]:transition_times[i][1]], 
+                                        sigma=5, axis=0)
+            trajectory -= trajectory[0]
+            
+            start = trajectory[0, :]
+            end = trajectory[-1, :]
+            dca_straightdev[i] = measure_straight_dev(trajectory, start, end)
+            
 
-        # Plot only 20 timesteps
-        t0 = transition_times[idx][0]
-        t1 = min(transition_times[idx][0] + 40, transition_times[idx][1])
+        #pca_devorder = np.arange(pca_straightdev.size)
+        #dca_devorder = np.arange(dca_straightdev.size)    
+        pca_devorder = np.argsort(pca_straightdev)[::-1]
+        dca_devorder = np.argsort(dca_straightdev)[::-1]
 
-        trajectory = gaussian_filter1d(xpca_j[0, t0:t1], 
-                                    sigma=5, axis=0)[:-3]
+        ############## Trajectory Plots #################
+        fig, ax = plt.subplots(1, 2, figsize=(10, 5))
 
-        # Center and normalize trajectories
-        trajectory -= trajectory[0]
-        #trajectory /= np.linalg.norm(trajectory)
+        for i in range(0, 25):
+            
+            idx = dca_devorder[i]
 
-        # Rotate trajectory so that the first 5 timesteps all go off at the same angle
-        theta0 = np.arctan2(trajectory[15, 1], trajectory[15, 0])
+            # Plot only 20 timesteps
+            t0 = transition_times[idx][0]
+            t1 = min(transition_times[idx][0] + 40, transition_times[idx][1])
 
-        # Rotate *clockwise* by theta
-        R = lambda theta: np.array([[np.cos(-1*theta), -np.sin(-theta)], \
-                                     [np.sin(-theta), np.cos(theta)]])        
-        trajectory = np.array([R(theta0 - np.pi/4) @ t[0:2] for t in trajectory])
+            trajectory = gaussian_filter1d(xpca_j[0, t0:t1], 
+                                        sigma=5, axis=0)[:-3]
 
-        ax[1].plot(trajectory[:, 0], trajectory[:, 1], 'k', alpha=0.5)
-        ax[1].arrow(trajectory[-1, 0], trajectory[-1, 1], 
-                    trajectory[-1, 0] - trajectory[-2, 0], trajectory[-1, 1] - trajectory[-2, 1], 
-                    head_width=0.08, color="k", alpha=0.5)
-        
-        
-        idx = dca_devorder[i]
-        t0 = transition_times[idx][0]
-        t1 = min(transition_times[idx][0] + 40, transition_times[idx][1])
-        trajectory = gaussian_filter1d(xdca_j[0, t0:t1], sigma=5, axis=0)[:-3]
+            # Center and normalize trajectories
+            trajectory -= trajectory[0]
+            #trajectory /= np.linalg.norm(trajectory)
 
-        # Center trajectories
-        trajectory -= trajectory[0]
-        #trajectory /= np.linalg.norm(trajectory)
+            # Rotate trajectory so that the first 5 timesteps all go off at the same angle
+            theta0 = np.arctan2(trajectory[15, 1], trajectory[15, 0])
 
-        # Rotate trajectory so that the first 5 timesteps all go off at the same angle
-        theta0 = np.arctan2(trajectory[15, 1], trajectory[15, 0])
+            # Rotate *clockwise* by theta
+            R = lambda theta: np.array([[np.cos(-1*theta), -np.sin(-theta)], \
+                                        [np.sin(-theta), np.cos(theta)]])        
+            trajectory = np.array([R(theta0 - np.pi/4) @ t[0:2] for t in trajectory])
 
-        trajectory = np.array([R(theta0 - np.pi/4) @ t[0:2] for t in trajectory])
+            ax[1].plot(trajectory[:, 0], trajectory[:, 1], 'k', alpha=0.5)
+            ax[1].arrow(trajectory[-1, 0], trajectory[-1, 1], 
+                        trajectory[-1, 0] - trajectory[-2, 0], trajectory[-1, 1] - trajectory[-2, 1], 
+                        head_width=0.08, color="k", alpha=0.5)
+            
+            
+            idx = dca_devorder[i]
+            t0 = transition_times[idx][0]
+            t1 = min(transition_times[idx][0] + 40, transition_times[idx][1])
+            trajectory = gaussian_filter1d(xdca_j[0, t0:t1], sigma=5, axis=0)[:-3]
+
+            # Center trajectories
+            trajectory -= trajectory[0]
+            #trajectory /= np.linalg.norm(trajectory)
+
+            # Rotate trajectory so that the first 5 timesteps all go off at the same angle
+            theta0 = np.arctan2(trajectory[15, 1], trajectory[15, 0])
+
+            trajectory = np.array([R(theta0 - np.pi/4) @ t[0:2] for t in trajectory])
+        _, p = scipy.stats.wilcoxon(maxim[:, 0, 2], maxim[:, 1, 2], alternative='less')
+        print('Re p:%f' % p)
 
         ax[0].plot(trajectory[:, 0], trajectory[:, 1], '#c73d34', alpha=0.5)
         ax[0].arrow(trajectory[-1, 0], trajectory[-1, 1], 
                     trajectory[-1, 0] - trajectory[-2, 0], trajectory[-1, 1] - trajectory[-2, 1], 
                     head_width=0.05, color="#c73d34", alpha=0.5)
 
-    ax[0].set_xticklabels([])
-    ax[0].set_yticklabels([])
+        ax[0].set_xticklabels([])
+        ax[0].set_yticklabels([])
+        
+        ax[1].set_xticklabels([])
+        ax[1].set_yticklabels([])
+
+        ax[0].set_aspect('equal')   
+        ax[1].set_aspect('equal')
+        ax[1].set_xlim([-2.2, 3.5])
+        ax[1].set_ylim([-2.2, 3.5])
+
+        ax[0].set_xlim([-2.2, 3.5])
+        ax[0].set_ylim([-2.2, 3.5])
+
+        ax[1].set_title('jPCA on PCA', fontsize=14)
+        ax[1].set_ylabel('jPC2', fontsize=14)
+        ax[1].set_xlabel('jPC1', fontsize=14)
+
+        ax[0].set_title('jPCA on FCCA', fontsize=14)
+        ax[0].set_ylabel('jPC2', fontsize=14)
+        ax[0].set_xlabel('jPC1', fontsize=14)
+
+        ax[0].spines['right'].set_color('none')
+        ax[0].spines['top'].set_color('none')
+        ax[0].spines['left'].set_color('none')
+        ax[0].spines['bottom'].set_color('none')
+        ax[0].set_xticks([])
+        ax[0].set_yticks([])
+        ax[1].set_xticks([])
+        ax[1].set_yticks([])
+
+        ax[1].spines['right'].set_color('none')
+        ax[1].spines['top'].set_color('none')
+        ax[1].spines['left'].set_color('none')
+        ax[1].spines['bottom'].set_color('none')
+        # ax[1].set_xticks([])
+        # ax[1].set_yticks([])
+        fig.tight_layout()
+        fig.savefig('%s/trajectories.pdf' % figpath, bbox_inches='tight', pad_inches=0)
+
+    ############## Trajectory Amplification #################
+    if dyn_range:
+        for didx, data_file in enumerate(data_files):
+            datpath = '/mnt/Secondary/data/sabes'
+            dat = load_sabes('%s/%s' % (datpath, data_file))
+            dat = reach_segment_sabes(dat, data_file=data_file.split('.mat')[0])
+
+            y = np.squeeze(dat['spike_rates'])
+
+            colors = ['k', 'r']
+            for j, dimreduc_method in enumerate(['PCA', 'LQGCA']):
+                df_ = apply_df_filters(sabes_df, data_file=data_file, fold_idx=0, dim=DIM, dimreduc_method=dimreduc_method)
+                if dimreduc_method == 'LQGCA':
+                    df_ = apply_df_filters(df_, dimreduc_args={'T': 3, 'loss_type': 'trace', 'n_init': 10})
+
+                assert(df_.shape[0] == 1)
+                V = df_.iloc[0]['coef']
+                if dimreduc_method == 'PCA':
+                    V = V[:, 0:DIM]        
+
+                # Project data
+                yproj = y @ V
+                yproj = np.array([yproj[t0:t0+40] for t0, t1 in dat['transition_times'] if t1 - t0 > 40])
+                yproj = np.array([y_ - y_[0] for y_ in yproj])
+                dY = np.concatenate(np.diff(yproj, axis=1), axis=0)
+                Y_prestate = np.concatenate(yproj[:, :-1], axis=0)
+
+                # Least squares
+                A, _, _, _ = np.linalg.lstsq(Y_prestate, dY, rcond=None)
+                _, s, _ = np.linalg.svd(A)
+                print('%s' % dimreduc_method + s)
+
+                # Identify the directions in which there is the most amplification over multiple timesteps
+                # Project the data along those directions and also record the amplification implied by the model
+            
+                # Iterate the lyapunov equation for 10 timesteps
+                P = np.zeros((DIM, DIM))
+                for _ in range(10):
+                    dP = A @ P + P @ A.T + np.eye(DIM)
+                    P += dP
+
+                eig, U = np.linalg.eig(P)
+                # eig, U = np.linalg.eig(scipy.linalg.expm(A.T) @ scipy.linalg.expm(A))
+                eig = np.sort(eig)[::-1]
+                U = U[:, np.argsort(eig)[::-1]]
+                U = U[:, 0:2]
+                # Plot smoothed, centered trajectories for all reaches in top 2 dimensions
+
+                # Argsort by the maximum amplitude in the top 2 dimensions
+                trajectory = gaussian_filter1d(yproj, sigma=5, axis=1)
+                trajectory -= trajectory[:, 0:1, :]
+                trajectory = trajectory @ U
+                dyn_range = np.max(np.abs(trajectory), axis=1)
+                ordering = np.argsort(dyn_range, axis=0)[::-1]
+
+                t0 = trajectory[ordering[:, 0], :, 0]
+                t1 = trajectory[ordering[:, 1], :, 1]
+
+                f1, a1 = plt.subplots(1, 1, figsize=(4.2, 4))
+                f2, a2 = plt.subplots(1, 1, figsize=(4.2, 4))
+                ax = [a1, a2]
+
+                for i in range(min(50, t0.shape[0])):
+                    ax[0].plot(50 * np.arange(40), t0[i], color=colors[j], alpha=0.5, linewidth=1.5)
+                    ax[1].plot(50 * np.arange(40), t1[i], color=colors[j], alpha=0.5, linewidth=1.5)
+                    #ax[2*j].set_title(np.sum(eig))
+                    
+                for a in ax:
+                    a.spines['bottom'].set_position('center')
+                    # Eliminate upper and right axes
+                    a.spines['right'].set_color('none')
+                    a.spines['top'].set_color('none')
+
+                    # Show ticks in the left and lower axes only
+                    a.xaxis.set_ticks_position('bottom')
+                    a.yaxis.set_ticks_position('left')
+
+                    a.set_xticks([0, 2])
+                    a.set_xticklabels([])
+                    a.tick_params(axis='both', labelsize=12)
+
+                    a.set_xlabel('Time (s)', fontsize=12)
+                    a.xaxis.set_label_coords(1.1, 0.56)
+                    
+                # Set y scale according to the current yscale on PCA 0
+                if j == 0:
+                    ylim_max = np.max(np.abs(t0[0])) + 0.25
+                    ylim = [-ylim_max, ylim_max]
+
+                for a in ax:
+                    a.set_ylim(ylim)
+                    a.set_yticks([-int(ylim_max), 0, int(ylim_max)])
+                    a.set_ylabel('Amplitude (a.u.)', fontsize=12)
+
+                if j == 0:
+                    ax[0].set_title('FFC Component 1', fontsize=12)
+                    ax[1].set_title('FFC Component 2', fontsize=12)
+                else:
+                    ax[0].set_title('FBC Component 1', fontsize=12)
+                    ax[1].set_title('FBC Component 2', fontsize=12)
+
+                #f1.tight_layout()
+                #f2.tight_layout()
+                f1.savefig('/home/akumar/nse/neural_control/figs/amplification/%d_e_%s1.pdf' % (didx, dimreduc_method), bbox_inches='tight', pad_inches=0)
+                f2.savefig('/home/akumar/nse/neural_control/figs/amplification/%d_e_%s2.pdf' % (didx, dimreduc_method), bbox_inches='tight', pad_inches=0)
+    if boxplots:
+        # Boxplots
+        fig, ax = plt.subplots(1, 2, figsize=(4, 6))
+        medianprops = dict(linewidth=1, color='b')
+        whiskerprops=dict(linewidth=0)
+        #bplot = ax.boxplot([d_U[:, 2, 1], d_U[:, 3, 1]], patch_artist=True, medianprops=medianprops, notch=True, vert=False, showfliers=False)
+        bplot = ax[0].boxplot([maxim[:, 0, 1], maxim[:, 1, 1], maxim_control[..., 1].ravel()], patch_artist=True, 
+                        medianprops=medianprops, notch=False, vert=True, showfliers=False, widths=[0.25, 0.25, 0.25],
+                        whiskerprops=whiskerprops, showcaps=False)
+
+        # _, p = scipy.stats.wilcoxon(d_U[:, 2, 1], d_U[:, 3, 1])
+        _, p = scipy.stats.wilcoxon(maxim[:, 0, 1], maxim[:, 1, 1], alternative='greater')
+        print('Im p:%f' % p)
+
+        # _, p = scipy.stats.wilcoxon(maxim[:, 0, 2], maxim[:, 1, 2], alternative='less')
+        # print('Re p:%f' % p)
+
+        # Mutliple comparison adjusted test of maxim control against PCA and FCCA
+        # _, p1 = scipy.stats.mannwhitneyu(maxim[:, 0, 1], maxim_control[..., 1].ravel(), alternative='greater')
+        # _, p2 = scipy.stats.mannwhitneyu(maxim[:, 1, 1], maxim_control[..., 1].ravel(), alternative='greater')
+
+        # print((p1, p2))
+
+        method1 = 'FBC'
+        method2 = 'FFC'
     
-    ax[1].set_xticklabels([])
-    ax[1].set_yticklabels([])
+        ax[0].set_xticklabels([method1, method2, 'Random'], fontsize=12, rotation=45)
+        ax[0].set_yticks([0.05, 0.15, 0.25, ])
+        ax[0].tick_params(axis='both', labelsize=12)
+        #ax.set_ylabel(r'$\sum_i Im(\lambda_i)$', fontsize=22)
+        ax[0].set_ylabel('Strength of Rotational Component', fontsize=12)
+        #ax.set_title('****', fontsize=14)
 
-    ax[0].set_aspect('equal')   
-    ax[1].set_aspect('equal')
-    ax[1].set_xlim([-2.2, 3.5])
-    ax[1].set_ylim([-2.2, 3.5])
+        #ax.invert_xaxis()
+    
+        # fill with colors
+        colors = ['red', 'black', 'blue']   
+        for patch, color in zip(bplot['boxes'], colors):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.6)
+        whiskerprops = dict(linewidth=0)
+        bplot = ax[1].boxplot([maxim[:, 0, 2], maxim[:, 1, 2], maxim_control[..., 2].ravel()], patch_artist=True, 
+                        medianprops=medianprops, notch=False, vert=True, showfliers=False, widths=[0.25, 0.25, 0.25],
+                        whiskerprops=whiskerprops, showcaps=False)
 
-    ax[0].set_xlim([-1.2, 2.2])
-    ax[0].set_ylim([-1.2, 2.2])
+        method1 = 'FBC'
+        method2 = 'FFC'
+    
+        ax[1].set_xticklabels([method1, method2, 'Random'], fontsize=12, rotation=45)
+        ax[1].set_yticks([0.0, 2.5, 5.0])
+        ax[1].tick_params(axis='both', labelsize=12)
+        #ax.set_ylabel(r'$\sum_i Im(\lambda_i)$', fontsize=22)
+        ax[1].set_ylabel('Average Dynamic Range', fontsize=12)
+        #ax.set_title('****', fontsize=14)
 
-    ax[1].set_title('jPCA on PCA', fontsize=14)
-    ax[1].set_ylabel('jPC2', fontsize=14)
-    ax[1].set_xlabel('jPC1', fontsize=14)
+        #ax.invert_xaxis()
+    
+        # fill with colors
+        colors = ['red', 'black', 'blue']   
+        for patch, color in zip(bplot['boxes'], colors):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.6)
 
-    ax[0].set_title('jPCA on FCCA', fontsize=14)
-    ax[0].set_ylabel('jPC2', fontsize=14)
-    ax[0].set_xlabel('jPC1', fontsize=14)
 
-    ax[0].spines['right'].set_color('none')
-    ax[0].spines['top'].set_color('none')
-    ax[0].spines['left'].set_color('none')
-    ax[0].spines['bottom'].set_color('none')
-    ax[0].set_xticks([])
-    ax[0].set_yticks([])
-    ax[1].set_xticks([])
-    ax[1].set_yticks([])
+        # ax.set_xlim([13, 0])
 
-    ax[1].spines['right'].set_color('none')
-    ax[1].spines['top'].set_color('none')
-    ax[1].spines['left'].set_color('none')
-    ax[1].spines['bottom'].set_color('none')
-    # ax[1].set_xticks([])
-    # ax[1].set_yticks([])
-    fig.tight_layout()
-    fig.savefig('%s/trajectories.pdf' % figpath, bbox_inches='tight', pad_inches=0)
-
-    # Boxplots
-    fig, ax = plt.subplots(1, 1, figsize=(2, 4))
-
-    medianprops = dict(linewidth=0)
-    #bplot = ax.boxplot([d_U[:, 2, 1], d_U[:, 3, 1]], patch_artist=True, medianprops=medianprops, notch=True, vert=False, showfliers=False)
-    bplot = ax.boxplot([maxim[:, 0, 0], maxim[:, 1, 0], maxim_control.ravel()], patch_artist=True, medianprops=medianprops, notch=True, vert=True, showfliers=False, widths=[0.25, 0.25, 0.25])
-
-    # _, p = scipy.stats.wilcoxon(d_U[:, 2, 1], d_U[:, 3, 1])
-    _, p = scipy.stats.wilcoxon(maxim[:, 0, 0], maxim[:, 1, 0], alternative='greater')
-    print('p:%f' % p)
-
-    method1 = 'FCCA'
-    method2 = 'PCA'
- 
-    ax.set_xticklabels([method1, method2, 'Random'], fontsize=12, rotation=45)
-    ax.set_yticks([0.05, 0.15, 0.25])
-    ax.tick_params(axis='both', labelsize=12)
-    #ax.set_ylabel(r'$\sum_i Im(\lambda_i)$', fontsize=22)
-    ax.set_ylabel('Strength of Rotational Component', fontsize=12)
-    #ax.set_title('****', fontsize=14)
-
-    #ax.invert_xaxis()
- 
-    # fill with colors
-    colors = ['red', 'black', 'blue']
-    for patch, color in zip(bplot['boxes'], colors):
-        patch.set_facecolor(color)
-        patch.set_alpha(0.6)
-
-    # ax.set_xlim([13, 0])
-
-    fig.tight_layout()
-    fig.savefig('%s/jpca_eig_bplot_wcontrol.pdf' % figpath, bbox_inches='tight', pad_inches=0)
+        fig.tight_layout()
+        fig.savefig('%s/jpca_eig_bplot_wcontrol2.pdf' % figpath, pad_inches=1)

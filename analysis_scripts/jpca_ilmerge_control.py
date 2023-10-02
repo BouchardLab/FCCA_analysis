@@ -81,7 +81,7 @@ if __name__ == '__main__':
 
     DIM = 6
     inner_reps = 1000
-    if not os.path.exists('jpcaAtmp_randomcontrol.dat'):
+    if not os.path.exists('jpcaAtmp_randomcontrol22.dat'):
         # Now do subspace identification/VAR inference within these 
         # results = []
         resultsd3 = []
@@ -108,12 +108,16 @@ if __name__ == '__main__':
                 jpca = JPCA(n_components=DIM, mean_subtract=False)
                 jpca.fit(yproj)
                 
-                ypred = yproj[:-1, :] @ jpca.M_skew
+                # ypred = yproj[:-1, :] @ jpca.M_skew
                 #r2_linear = linmodel.score(yproj[:-1, :], np.diff(yproj, axis=0))
                 result_['jeig'] = jpca.eigen_vals_
+
+                yprojcent = np.array([y_ - y_[0:1, :] for y_ in yproj])
+                dyn_range = np.array([np.max(np.abs(y_)[:, j]) for y_ in yprojcent for j in range(DIM)])
+                result_['dyn_range'] = np.mean(dyn_range)
                 resultsd3.append(result_)
 
-        with open('jpcaAtmp_randomcontrol.dat', 'wb') as f:
+        with open('jpcaAtmp_randomcontrol2.dat', 'wb') as f:
             f.write(pickle.dumps(resultsd3))            
 
     print('Already done!')

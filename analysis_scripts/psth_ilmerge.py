@@ -55,6 +55,82 @@ start_times = {'indy_20160426_01': 0,
                'indy_20170131_02': 0,
                }
 
+def get_top_neurons_alt(dimreduc_df, n=10, data_path=None, T=None, bin_width=None):
+
+    if data_path is None:
+        data_path = globals()['data_path']
+    if T is None:
+        T = globals()['T']
+    if bin_width is None:
+        bin_width = globals()['bin_width']
+
+    # Load dimreduc_df and calculate loadings
+    data_files = np.unique(dimreduc_df['data_file'].values)
+    # Try the raw leverage scores instead
+    loadings_pca = []
+    idxs_pca = []
+    loadings_fca = []
+    idxs_fca = []
+
+    for i, data_file in tqdm(enumerate(data_files)):
+        loadings = []
+        for dimreduc_method in ['LQGCA', 'PCA']:
+            loadings_fold = []
+            for fold_idx in range(5):            
+                df_ = apply_df_filters(dimreduc_df, data_file=data_file, fold_idx=fold_idx, dim=6, dimreduc_method=dimreduc_method)
+                if dimreduc_method == 'LQGCA':
+                    df_ = apply_df_filters(df_, dimreduc_args={'T': 3, 'loss_type': 'trace', 'n_init': 10})
+
+                assert(df_.shape[0] == 1)
+                V = df_.iloc[0]['coef']
+                if dimreduc_method == 'PCA':
+                    V = V[:, 0:2]        
+                loadings_fold.append(calc_loadings(V))
+
+            if dimreduc_method == 'LQGCA':
+                loadings_fca.extend(np.mean(loadings_fold, axis=0))
+                idxs_fca.extend([(i, j) for j in np.arange(loadings_fold[0].size)])
+            elif dimreduc_method == 'PCA':
+                loadings_pca.extend(np.mean(loadings_fold, axis=0))
+                idxs_pca.extend([(i, j) for j in np.arange(loadings_fold[0].size)])
+   
+    # Assemble the disjoint sets across all recording sessions.
+    # Want to end up with n * n_data_files neurons, but pooled across sessions now.
+    top_neurons_pca = []
+    top_neurons_fca = []
+    
+    N = n * len(data_files)
+
+    pca_ordering = np.argsort(loadings_pca)[::-1]
+    fca_ordering = np.argsort(loadings_fca)[::-1]
+
+    def empty_min(x):
+        if len(x) == 0:
+            return np.inf
+        else:
+            return np.min(x)
+
+    idx = 0
+    while not np.all([len(x) >= N for x in [top_neurons_pca, top_neurons_fca]]):
+        top_pca_candidate = idxs_pca[pca_ordering[idx]]
+
+        # Accept the candidate only if it is not contained in the top N FCCA neurons
+        candidate_fca_idx = idxs_fca.index(top_pca_candidate)
+
+        if not candidate_fca_idx in fca_ordering[:N]:
+            top_neurons_pca.append(pca_ordering[idx])
+
+        top_fca_candidate = idxs_fca[fca_ordering[idx]]
+
+        candidate_pca_idx = idxs_pca.index(top_fca_candidate)
+
+        if not candidate_pca_idx in pca_ordering[:N]:
+            top_neurons_fca.append(fca_ordering[idx])
+    
+        idx += 1
+
+    return top_neurons_pca, top_neurons_fca, loadings_pca, loadings_fca
+
 def get_top_neurons(dimreduc_df, method1='FCCA', method2='PCA', n=10, pairwise_exclude=True, data_path=None, T=None, bin_width=None):
 
     if data_path is None:
@@ -142,9 +218,15 @@ def get_top_neurons(dimreduc_df, method1='FCCA', method2='PCA', n=10, pairwise_e
         top_neurons[1, :] = top2[0:n]
 
         top_neurons_l.append({'data_file':data_file, 'rank_diffs':rank_diffs, 'top_neurons': top_neurons}) 
+
+
     top_neurons_df = pd.DataFrame(top_neurons_l)
     
     return top_neurons_df, loadings_df
+
+
+
+
 
 def heatmap_plot(top_neurons_df, path):
 
@@ -428,50 +510,80 @@ def box_plots(method1, method2, tau_max, mag, dyn_range, stats, p, path):
     avg_dyn_range2 = np.mean(dyn_range[:, 1, :], axis=-1)
 
     # Boxplots
-    fig, ax = plt.subplots(1, 3, figsize=(5, 4))
+    fig, ax = plt.subplots(1, 2, figsize=(3.67, 4))
 
-    medianprops = dict(linewidth=0)
-
+    medianprops = dict(linewidth=1, color='b')
+    whiskerprops = dict(linewidth=0)
     # Plot dynamic arange, averag magnitude, and then entropy in order
 
     # Instead of PI, make boxplots of the dynamimc range (Z-scored)
-    bplot1 = ax[0].boxplot([avg_dyn_range1, avg_dyn_range2], patch_artist=True, medianprops=medianprops, notch=True, showfliers=False, vert=True)
-    bplot2 = ax[1].boxplot([avg_mag1, avg_mag2], patch_artist=True, medianprops=medianprops, notch=True, showfliers=False, vert=True)
-    bplot3 = ax[2].boxplot([tau_h1, tau_h2], patch_artist=True, medianprops=medianprops, notch=True, showfliers=False, vert=True)
+    # bplot1 = ax[0].boxplot([avg_dyn_range1, avg_dyn_range2], patch_artist=True, medianprops=medianprops, 
+    #                        notch=False, showfliers=False, vert=True, whiskerprops=whiskerprops, showcaps=False)
+    bplot2 = ax[0].boxplot([avg_mag1, avg_mag2], patch_artist=True, medianprops=medianprops, notch=False, showfliers=False, 
+                           vert=True, whiskerprops=whiskerprops, showcaps=False)
+    bplot3 = ax[1].boxplot([tau_h1, tau_h2], patch_artist=True, medianprops=medianprops, notch=False, 
+                           showfliers=False, vert=True, whiskerprops=whiskerprops, showcaps=False)
 
-    ax[0].set_xticklabels([method1, method2])
-    ax[1].set_xticklabels([method1, method2])
-    ax[2].set_xticklabels([method1, method2])
+    method1 = 'FBC'
+    method2 = 'FFC'
+    # ax[0].set_xticklabels([method1, method2], rotation=45)
+    # ax[1].set_xticklabels([method1, method2], rotation=45)
+    # ax[2].set_xticklabels([method1, method2], rotation=45)
 
-    ax[2].set_yticks([0, -15, -30])
+    ax[1].set_yticks([10, -10, -30])
+    ax[1].set_ylim([-30, 10])
+    ax[0].set_yticks([0.1, 0.25, 0.4])
+    ax[0].set_ylim([0.1, 0.4])
     # ax[1].set_xticks([15, 30, 45])
     #ax[0].set_title(r'$\tau$' + '-entropy, p=%f' % p[2], fontsize=10)
     #ax[1].set_title('Avg. magnitude, stat: p=%f' % p[3], fontsize=10)
     
     # Get the minimum significance level consistent with a multiple comparisons test
-    pvec = np.sort(p[2:])
-    a1 = pvec[0] * 3
-    a2 = pvec[1] * 2
-    a3 = pvec[2]
-    print(max([a1, a2, a3]))
-    ax[0].set_title('*****', fontsize=10)
-    ax[1].set_title('*****', fontsize=10)
-    ax[2].set_title('*****', fontsize=10)
+    pvec = np.sort(p[2:4])
+    a1 = pvec[0] * 2
+    a2 = pvec[1]
+    print([a1, a2])
+    # ax[0].set_title('*****', fontsize=10)
+    # ax[1].set_title('*****', fontsize=10)
+    # ax[2].set_title('*****', fontsize=10)
     
-    ax[0].set_ylabel('Avg. Dynamic Range', fontsize=12)
-    ax[1].set_ylabel('Average peak cross-corr.', fontsize=12)
-    ax[2].set_ylabel('Entropy of peak cross-corr. times', fontsize=12)
+    # ax[0].set_ylabel('Avg. Dynamic Range', fontsize=16)
+    ax[0].set_ylabel('Average Peak C.C.', fontsize=16)
+    ax[1].set_ylabel('Peak C.C. Time Entropy', fontsize=16)
+    for a in ax:
+        a.tick_params(axis='both', labelsize=14)
+
 
     # fill with colors
     colors = ['red', 'black']
-    for bplot in (bplot1, bplot2, bplot3):
+    for bplot in (bplot2, bplot3):
         for patch, color in zip(bplot['boxes'], colors):
             patch.set_facecolor(color)
             patch.set_alpha(0.75)
 
     fig.tight_layout()
-    fig.savefig('%s/boxplots_with_dynrange.pdf' % path, bbox_inches='tight', pad_inches=0)
+    fig.savefig('%s/boxplots_with_dynrange.pdf' % path, bbox_inches='tight', pad_inches=0.1)
     
+    # Additional plot for the trant - take the  paired differences of the average peak cross-correlation
+    fig, ax = plt.subplots(1, 1, figsize=(4, 1))
+    avg_mag1 = np.mean(mag[:, 0, :], axis=-1)
+    avg_mag2 = np.mean(mag[:, 1, :], axis=-1)
+    diff = avg_mag2 - avg_mag1
+    bplot = ax.boxplot(diff, patch_artist=True, medianprops=medianprops, notch=True, showfliers=False, vert=False)
+    for patch in bplot['boxes']:
+        patch.set_facecolor('blue')
+        patch.set_alpha(0.75)
+
+    ax.set_xlim([-0.05, 0.2])
+    ax.set_xticks([0.0, 0.2])
+    ax.set_yticks([])
+    fig.tight_layout()
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    #ax.spines['bottom'].set_visible(False)
+    ax.spines['left'].set_visible(False)
+    fig.savefig('%s/boxplot_diff_for_grant.pdf' % path, bbox_inches='tight', pad_inches=0.25)
+
 if __name__ == '__main__':
 
     # Where to save?

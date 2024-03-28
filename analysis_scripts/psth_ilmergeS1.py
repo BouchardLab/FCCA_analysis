@@ -55,7 +55,8 @@ start_times = {'indy_20160426_01': 0,
                'indy_20170131_02': 0,
                }
 
-def get_top_neurons(dimreduc_df, method1='FCCA', method2='PCA', n=10, pairwise_exclude=True, data_path=None, T=None, bin_width=None):
+def get_top_neurons(dimreduc_df, fraction_cutoff=0.9, 
+                    method1='FCCA', method2='PCA', n=10, pairwise_exclude=True, data_path=None, T=None, bin_width=None):
 
     if data_path is None:
         data_path = globals()['data_path']
@@ -81,7 +82,7 @@ def get_top_neurons(dimreduc_df, method1='FCCA', method2='PCA', n=10, pairwise_e
                 assert(df_.shape[0] == 1)
                 V = df_.iloc[0]['coef']
                 if dimreduc_method == 'PCA':
-                    V = V[:, 0:2]        
+                    V = V[:, 0:6]        
                 loadings_fold.append(calc_loadings(V))
 
             # Average loadings across folds
@@ -102,47 +103,39 @@ def get_top_neurons(dimreduc_df, method1='FCCA', method2='PCA', n=10, pairwise_e
     n = 10
     for i, data_file in tqdm(enumerate(data_files)):
         df_ = apply_df_filters(loadings_df, data_file=data_file)
-        FCCA_ordering = np.argsort(df_['FCCA_loadings'].values)
-        PCA_ordering = np.argsort(df_['PCA_loadings'].values)
+
+        # Order neurons according to linear fractional FBC score
+        fbc_fraction = np.divide(df_['FCCA_loadings'].values, df_['FCCA_loadings'].values + df_['PCA_loadings'].values)
+        ffc_fraction = np.divide(df_['PCA_loadings'].values, df_['FCCA_loadings'].values + df_['PCA_loadings'].values)
+        ordering = np.argsort(fbc_fraction)[::-1]
         
-        rank_diffs = np.zeros((PCA_ordering.size,))
-        for j in range(df_.shape[0]):            
-            rank_diffs[j] = list(FCCA_ordering).index(j) - list(PCA_ordering).index(j)
+        # FCCA_ordering = np.argsort(df_['FCCA_loadings'].values)
+        # PCA_ordering = np.argsort(df_['PCA_loadings'].values)
+        
+        # rank_diffs = np.zeros((PCA_ordering.size,))
+        # for j in range(df_.shape[0]):            
+        #     rank_diffs[j] = list(FCCA_ordering).index(j) - list(PCA_ordering).index(j)
 
         # Find the top 5 neurons according to all pairwise high/low orderings
-        top_neurons = np.zeros((2, n)).astype(int)
+        cutoff_1 = np.quantile(fbc_fraction, fraction_cutoff)
+        cutoff_2 = np.quantile(ffc_fraction, fraction_cutoff)
+        fbc_neuron_indices = np.arange(df_.shape[0])[fbc_fraction > cutoff_1]
+        ffc_neuron_indices = np.arange(df_.shape[0])[ffc_fraction > cutoff_2]
 
-        # User selects which pairwise comparison is desired
-        method_dict = {'PCA': PCA_ordering, 'FCCA':FCCA_ordering}
+        # Possible sets are off by a few..shave to the smallest length
+        min_size = min(fbc_neuron_indices.size, ffc_neuron_indices.size)
+        fbc_neuron_indices = fbc_neuron_indices[:min_size]
+        ffc_neuron_indices = ffc_neuron_indices[:min_size]
 
-        top1 = []
-        top2 = []
+        # Ensure there is no overlap
+        assert(len(np.intersect1d(fbc_neuron_indices, ffc_neuron_indices)) == 0)
 
-        idx = 0
-        while not np.all([len(x) >= n for x in [top1, top2]]):
-            idx += 1
-            # Take neurons from the top ordering of each method. Disregard neurons that 
-            # show up in all methods
-            # top_DCA = DCA_ordering[-idx]
-            top1_ = method_dict[method1][-idx]
-            top2_ = method_dict[method2][-idx]
 
-            if pairwise_exclude:
-                if top1_ != top2_:
-                    if top1_ not in top2:
-                        top1.append(top1_)
-                    if top2_ not in top1:
-                        top2.append(top2_)
-                else:
-                    continue
-            else:
-                top1.append(top1_)
-                top2.append(top2_)
+        top_neurons = np.vstack([fbc_neuron_indices, ffc_neuron_indices]).astype(int)
 
-        top_neurons[0, :] = top1[0:n]
-        top_neurons[1, :] = top2[0:n]
+        top_neurons_l.append({'data_file':data_file, 'top_neurons': top_neurons}) 
 
-        top_neurons_l.append({'data_file':data_file, 'rank_diffs':rank_diffs, 'top_neurons': top_neurons}) 
+
     top_neurons_df = pd.DataFrame(top_neurons_l)
     
     return top_neurons_df, loadings_df
@@ -284,7 +277,8 @@ def cross_cov_calc(top_neurons_df):
 
     data_path = globals()['data_path']
     T = globals()['T']
-    n = globals()['n']
+    # n = globals()['n']
+    n = min([top_neurons_df.iloc[j]['top_neurons'].shape[1] for j in range(top_neurons_df.shape[0])])
     bin_width = globals()['bin_width']
 
     # (Bin size 50 ms)
@@ -294,7 +288,6 @@ def cross_cov_calc(top_neurons_df):
 
     cross_covs = np.zeros((len(data_files), 2, n, n, time.size))
     cross_covs_01 = np.zeros((len(data_files), 2, n, n, time.size))
-
     dyn_range = np.zeros((len(data_files), 2, n))
 
     for h, data_file in enumerate(data_files):
@@ -333,7 +326,8 @@ def cross_cov_calc(top_neurons_df):
 def statistics(cross_covs, cross_covs_01, dyn_range):
     data_path = globals()['data_path']
     T = globals()['T']
-    n = globals()['n']
+    n = cross_covs.shape[2]
+    # n = globals()['n']
     bin_width = globals()['bin_width']
 
     # Significance tests
@@ -342,8 +336,8 @@ def statistics(cross_covs, cross_covs_01, dyn_range):
     cc_tau = np.zeros((cross_covs.shape[0], cross_covs.shape[1], cross_covs.shape[2] * cross_covs.shape[3] - cross_covs.shape[2], cross_covs.shape[-1]))
 
     idx = 0
-    for i in range(10):
-        for j in range(10):
+    for i in range(n):
+        for j in range(n):
             if i == j:
                 continue
             cc_mag[:, :, idx, :] = cross_covs01[:, :, i, j, :]
@@ -384,12 +378,12 @@ def statistics(cross_covs, cross_covs_01, dyn_range):
     wstat4, p4 = scipy.stats.wilcoxon(avg_mag1, avg_mag2, alternative='less')
     wstat5, p5 = scipy.stats.wilcoxon(avg_dyn_range1, avg_dyn_range2, alternative='less')
 
-    return tau_max, mag, (wstat1, wstat2, wstat3, wstat4, wstat5), (p1, p2, p3, p4, p5)
+    return tau_max, mag, (tau_h1, tau_h2), (avg_mag1, avg_mag2), (wstat1, wstat2, wstat3, wstat4, wstat5), (p1, p2, p3, p4, p5)
 
-def box_plots(method1, method2, tau_max, mag, dyn_range, stats, p, path):
+def box_plots(method1, method2, tau_max, mag, dyn_range, tau_h, avg_mag, stats, p, path):
 
-    tau_h1 = [knn_entropy(tau_max[idx, 0, :][:, np.newaxis], k=5) for idx in range(tau_max.shape[0])]
-    tau_h2 = [knn_entropy(tau_max[idx, 1, :][:, np.newaxis], k=5) for idx in range(tau_max.shape[0])]
+    tau_h1 = tau_h[0]
+    tau_h2 = tau_h[1]
 
     data_path = globals()['data_path']
     T = globals()['T']  
@@ -408,7 +402,7 @@ def box_plots(method1, method2, tau_max, mag, dyn_range, stats, p, path):
         a.legend(['FCCA', 'PCA'])
 
     fig.suptitle('Peak cross-cov time, %s vs. %s' % (method1, method2))
-    fig.savefig('%s/tau_hist.pdf' % path, bbox_inches='tight', pad_inches=0)
+    # fig.savefig('%s/tau_hist.pdf' % path, bbox_inches='tight', pad_inches=0)
 
     # Plot the histograms
     fig, ax = plt.subplots(4, 2, figsize=(8, 16))
@@ -420,10 +414,12 @@ def box_plots(method1, method2, tau_max, mag, dyn_range, stats, p, path):
         a.legend(['FCCA', 'PCA'])
 
     fig.suptitle('Peak cross-cov magnitude, %s vs. %s' % (method1, method2))
-    fig.savefig('%s/mag_hist.pdf' % path, bbox_inches='tight', pad_inches=0)
+    # fig.savefig('%s/mag_hist.pdf' % path, bbox_inches='tight', pad_inches=0)
 
-    avg_mag1 = np.mean(mag[:, 0, :], axis=-1)
-    avg_mag2 = np.mean(mag[:, 1, :], axis=-1)
+    # avg_mag1 = np.mean(mag[:, 0, :], axis=-1)
+    # avg_mag2 = np.mean(mag[:, 1, :], axis=-1)
+    avg_mag1 = avg_mag[0]
+    avg_mag2 = avg_mag[1]
 
     avg_dyn_range1 = np.mean(dyn_range[:, 0, :], axis=-1)
     avg_dyn_range2 = np.mean(dyn_range[:, 1, :], axis=-1)
@@ -446,15 +442,15 @@ def box_plots(method1, method2, tau_max, mag, dyn_range, stats, p, path):
 
     # Violin plot
 
-
     # ax[0].set_xticklabels([method1, method2])
     # ax[1].set_xticklabels([method1, method2])
     # ax[2].set_xticklabels([method1, method2])
 
-    ax[1].set_yticks([10, -10, -30])
-    ax[1].set_ylim([-30, 10])
-    ax[0].set_yticks([0.1, 0.25, 0.4])
-    ax[0].set_ylim([0.1, 0.4])
+
+    ax[1].set_ylim([-29.3, -28])
+    ax[1].set_yticks([-29, -28])
+    ax[0].set_ylim([0.15, 0.35])
+    ax[0].set_yticks([0.15, 0.25, 0.35])
     # ax[1].set_xticks([15, 30, 45])
     #ax[0].set_title(r'$\tau$' + '-entropy, p=%f' % p[2], fontsize=10)
     #ax[1].set_title('Avg. magnitude, stat: p=%f' % p[3], fontsize=10)
@@ -483,7 +479,7 @@ def box_plots(method1, method2, tau_max, mag, dyn_range, stats, p, path):
             patch.set_alpha(0.75)
 
     fig.tight_layout()
-    fig.savefig('%s/boxplots_with_dynrange.pdf' % path, pad_inches=0.1, bbox_inches='tight')
+    fig.savefig(path, pad_inches=0.1, bbox_inches='tight')
     
 if __name__ == '__main__':
 
@@ -505,7 +501,7 @@ if __name__ == '__main__':
     globals()['n'] = n
     globals()['bin_width'] = bin_width
 
-    # Load dimreduc_dfs
+    # # Load dimreduc_dfs
     good_loco_files = ['loco_20170210_03.mat',
                     'loco_20170213_02.mat',
                     'loco_20170215_02.mat',
@@ -532,20 +528,151 @@ if __name__ == '__main__':
     method1 = 'FCCA'
     method2 = 'PCA'
 
-    # Get top neurons
-    top_neurons_df, _ = get_top_neurons(dimreduc_df, method1=method1, method2=method2, n=10, pairwise_exclude=True)
-    # heatmap_plot(top_neurons_df, figpath)
-    # Plot PSTH
-    PSTH_plot(top_neurons_df, figpath)
+    # # # Get top neurons as a function of FBC fraction threshold, and keep track of the test statistic and p-value as a function
+    # # # of this threshold, and magnitude of the effect
+    # fbc_fraction = np.linspace(0.5, 0.95, 25)[::-1]
+    # corrected_pvals = np.zeros((fbc_fraction.size, 2))
+    # test_stats = np.zeros((fbc_fraction.size, 2))
+    # effect = np.zeros((fbc_fraction.size, 2))
+    # for i, fbcf in enumerate(fbc_fraction):
+    #     top_neurons_df, _ = get_top_neurons(dimreduc_df, fraction_cutoff=fbcf, method1=method1, method2=method2, n=10, pairwise_exclude=True)
+    #     # Cross-covariance stuff
+    #     cross_covs, cross_covs01, dyn_range = cross_cov_calc(top_neurons_df)
+    #     tau_max, mag, tau_h, avg_mag, stats, p = statistics(cross_covs, cross_covs01, dyn_range)
+    #     pvec = np.sort(p[2:4])
+    #     order_ = np.argsort(p[2:4])
+    #     a1 = pvec[0] * 2
+    #     a2 = pvec[1]
+    #     corrected_pvals[i, order_[0]] = a1
+    #     corrected_pvals[i, order_[1]] = a2
+    #     test_stats[i, 0] = stats[2]
+    #     test_stats[i, 1] = stats[3]
 
+    #     effect[i, 0] = np.median(np.array(tau_h[0]) - np.array(tau_h[1]))
+    #     effect[i, 1] = np.median(np.array(avg_mag[0]) - np.array(avg_mag[1]))
+
+    # with open('%s/psth_diagnosticS1.dat' % figpath, 'wb') as f:
+    #     pickle.dump({'fbc_fraction': fbc_fraction, 'corrected_pvals': corrected_pvals, 'test_stats': test_stats, 'effect': effect}, f)
+
+    # with open('%s/psth_diagnosticS1.dat' % figpath, 'rb') as f:
+    #     results = pickle.load(f)
+
+    # fbc_fraction = results['fbc_fraction']
+    # corrected_pvals = results['corrected_pvals']
+    # test_stats = results['test_stats']
+    # effect = results['effect']
+
+    # # Make a plot of these quantities=
+    # fig, ax = plt.subplots(2, 3, figsize=(12, 8))
+    # ax[0, 0].plot(fbc_fraction, np.log10(corrected_pvals[:, 0]), 'b')
+    # ax[1, 0].plot(fbc_fraction, np.log10(corrected_pvals[:, 1]), 'b')
+    # for j in range(2):
+    #     # Add horizontal levels at the [1e-5, 1e-4, 1e-3, 5e-2] levels:
+    #     ax[j, 0].hlines(np.log10([1e-5, 1e-4, 1e-3, 5e-2]), fbc_fraction[0], fbc_fraction[-1], colors='k', linestyles='dashed', alpha=0.5)
+    #     ax[j, 0].set_ylabel('Corrected p-value', fontsize=14)
+    #     ax[j, 0].set_xlabel('FBC fraction threshold', fontsize=14)
+    
+    # ax[0, 0].set_title('Peak c.c. Entropy', fontsize=16)
+    # ax[1, 0].set_title('Average Peak C.C.', fontsize=16)
+
+    # ax[0, 1].plot(fbc_fraction, test_stats[:, 0], 'b')
+    # ax[1, 1].plot(fbc_fraction, test_stats[:, 1], 'b')
+    # for j in range(2):
+    #     ax[j, 1].set_ylabel('WSRT Test Statistic', fontsize=14)
+    #     ax[j, 1].set_xlabel('FBC fraction threshold', fontsize=14)
+
+    # ax[0, 1].set_title('Peak c.c. Entropy', fontsize=16)
+    # ax[1, 1].set_title('Average Peak C.C.', fontsize=16)
+
+    # ax[0, 2].plot(fbc_fraction, effect[:, 0], 'b')
+    # ax[1, 2].plot(fbc_fraction, effect[:, 1], 'b')
+    # for j in range(2):
+    #     ax[j, 2].set_title('Effect Size', fontsize=16)
+    #     ax[j, 2].set_xlabel('FBC fraction threshold', fontsize=14)
+
+    # ax[0, 2].set_ylabel('Median Peak c.c. Entropy Diff.', fontsize=14)
+    # ax[1, 2].set_ylabel('Median Avg. Peak C.C. Diff', fontsize=14)
+
+    # fig.tight_layout()
+    # fig.savefig('%s/psth_diagnosticS1.pdf' % figpath, bbox_inches='tight', pad_inches=0)
+
+    # Get top neurons
+    # top_neurons_df, _ = get_top_neurons(dimreduc_df, fraction_cutoff=0.5, method1=method1, method2=method2, n=10, pairwise_exclude=True)
+    # # Cross-covariance stuff
+    # cross_covs, cross_covs01, dyn_range = cross_cov_calc(top_neurons_df)
+    # tau_max, mag, tau_h, avg_mag, stats, p = statistics(cross_covs, cross_covs01, dyn_range)
+    # box_plots(method1, method2, tau_max, mag, dyn_range, tau_h, avg_mag, stats, p, '%s/psth_boxplot_q50.pdf' % figpath)
+    
+    # Get effects for 50, 75, and 95 percentile
+
+    # top_neurons_df, _ = get_top_neurons(dimreduc_df, fraction_cutoff=0.5, method1=method1, method2=method2, n=10, pairwise_exclude=True)
+    # # Cross-covariance stuff
+    # cross_covs, cross_covs01, dyn_range = cross_cov_calc(top_neurons_df)
+    # _, _, tau_h50, avg_mag50, stats50, p50 = statistics(cross_covs, cross_covs01, dyn_range)
+    # pvec = np.sort(p50[2:4])
+    # a1 = pvec[0] * 2
+    # a2 = pvec[1]
+    # print([a1, a2])
+    # avg_dyn_range1 = np.mean(dyn_range[:, 0, :], axis=-1)
+    # avg_dyn_range2 = np.mean(dyn_range[:, 1, :], axis=-1)
+    # print(np.median(avg_dyn_range1), np.median(avg_dyn_range2))
+    # print(np.median(avg_mag50[0]), np.median(avg_mag50[1]))
+    # print(np.median(tau_h50[0]), np.median(tau_h50[1]))
+
+
+    # top_neurons_df, _ = get_top_neurons(dimreduc_df, fraction_cutoff=0.70, method1=method1, method2=method2, n=10, pairwise_exclude=True)
+    # # Cross-covariance stuff
+    # cross_covs, cross_covs01, dyn_range = cross_cov_calc(top_neurons_df)
+    # _, _, tau_h75, avg_mag75, stats75, p75 = statistics(cross_covs, cross_covs01, dyn_range)
+    # pvec = np.sort(p75[2:4])
+    # a1 = pvec[0] * 2
+    # a2 = pvec[1]
+    # print([a1, a2])
+
+    # top_neurons_df, _ = get_top_neurons(dimreduc_df, fraction_cutoff=0.90, method1=method1, method2=method2, n=10, pairwise_exclude=True)
+    # # Cross-covariance stuff
+    # cross_covs, cross_covs01, dyn_range = cross_cov_calc(top_neurons_df)
+    # _, _, tau_h90, avg_mag90, stats90, p90 = statistics(cross_covs, cross_covs01, dyn_range)
+    # pvec = np.sort(p90[2:4])
+    # a1 = pvec[0] * 2
+    # a2 = pvec[1]
+    # print([a1, a2])
+
+    # fig, ax = plt.subplots(1, 2, figsize=(5, 4))
+
+    # medianprops = dict(linewidth=1, color='b')
+    # whiskerprops = dict(linewidth=0)
+
+    # bplot2 = ax[0].boxplot([avg_mag50[0], avg_mag50[1], avg_mag75[0], avg_mag75[1], avg_mag90[0], avg_mag90[1]], patch_artist=True, medianprops=medianprops, 
+    #                        notch=False, showfliers=False, vert=True, whiskerprops=whiskerprops, showcaps=False)
+    # bplot3 = ax[1].boxplot([tau_h50[0], tau_h50[1], tau_h75[0], tau_h75[1], tau_h90[0], tau_h90[1]], patch_artist=True, medianprops=medianprops, notch=False, 
+    #                        showfliers=False, vert=True, whiskerprops=whiskerprops, showcaps=False)
+
+    # ax[1].set_ylim([-29, -28])
+    # ax[1].set_yticks([-29, -28])
+    # ax[0].set_ylim([0.15, 0.35])
+    # ax[0].set_yticks([0.15, 0.25, 0.35])
+    # # ax[1].set_xticks([15, 30, 45])
+    # #ax[0].set_title(r'$\tau$' + '-entropy, p=%f' % p[2], fontsize=10)
+    # #ax[1].set_title('Avg. magnitude, stat: p=%f' % p[3], fontsize=10)
+    
+    # # Get the minimum significance level consistent with a multiple comparisons test - looking at just the 
+    # # average magnitude and entropy of c.c.
+    # ax[0].set_ylabel('Average Peak C.C.', fontsize=16)
+    # ax[1].set_ylabel('Peak C.C. Time Entropy', fontsize=16)
+    # for a in ax:
+    #     a.tick_params(axis='both', labelsize=14)
+
+    # # fill with colors
+    # colors = ['red', 'black', 'red', 'black', 'red', 'black']
+    # for bplot in (bplot2, bplot3):
+    #     for patch, color in zip(bplot['boxes'], colors):
+    #         patch.set_facecolor(color)
+    #         patch.set_alpha(0.75)
+
+    top_neurons_df, _ = get_top_neurons(dimreduc_df, fraction_cutoff=0.5, method1=method1, method2=method2, n=10, pairwise_exclude=True)
     # Cross-covariance stuff
     cross_covs, cross_covs01, dyn_range = cross_cov_calc(top_neurons_df)
-    tau_max, mag, stats, p = statistics(cross_covs, cross_covs01, dyn_range)
-
-
-    data_files = np.unique(dimreduc_df['data_file'].values)
-    # Print out data files corresponding to tuple ((np.argmax(tau_h1), np.argmax(avg_mag2))) for use in su_figs
-    # print((data_files[27], data_files[6 ]))
-
-    box_plots(method1, method2, tau_max, mag, dyn_range, stats, p, figpath)
-    
+    tau_max, mag, tau_h, avg_mag, stats, p = statistics(cross_covs, cross_covs01, dyn_range)
+    pdb.set_trace()
+    box_plots(method1, method2, tau_max, mag, dyn_range, tau_h, avg_mag, stats, p, '%s/psth_boxplots_q50.pdf' % figpath)

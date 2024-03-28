@@ -138,7 +138,6 @@ def load_data_S1():
 
     loader_arg = {'bin_width':50, 'filter_fn':'none', 'filter_kwargs':{}, 'boxcox':0.5, 'spike_threshold':100, 'region':'S1'}
     sabes_df = apply_df_filters(sabes_df, loader_args=loader_arg)
-
     data_files = np.unique(sabes_df['data_file'].values)
 
     rl = []
@@ -306,19 +305,28 @@ def plot_(dvt_df, vel_all, acc_all, metrics, ax, region):
 
         ax[i][0].vlines(50 * window_centers[np.argmax(r2fwa)], 0, 0.6, linestyles=[(0,(3,6))], color='r', alpha=0.75)
         ax[i][0].vlines(50 * window_centers[np.argmax(r2pwa)], 0, 0.6, linestyles=[(4,(3,6))], color='k', alpha=0.75)
-
+        ax[i][0].vlines(50 * np.arange(-5, 30)[np.argmax(np.mean(velall, axis=0))], 0, 0.6, linestyles=[(0,(3,6))], color='teal', alpha=0.75)
 
         # # Get the 80 % shoulders
         acc_threshold = 0.8 * np.max(np.mean(accall, axis=0))
         acc_idxs = np.argwhere(np.mean(accall, axis=0) > acc_threshold)[[0, -1], 0]
 
+        dr2_threshold = 0.8 * np.max([np.sum(np.multiply(r1 - r2, ntr))/np.sum(ntr) for (r1, r2) in zip(r2f, r2p)])
+        dr2_idxs = np.argwhere(np.array([np.sum(np.multiply(r1 - r2, ntr))/np.sum(ntr) for (r1, r2) in zip(r2f, r2p)])[5:-5] > dr2_threshold)[[0, -1], 0]
+
         if metric == 'position':
             pass
         elif metric == 'velocity':
-            ax[i][1].vlines(50 * np.arange(-5, 30)[np.argmax(np.mean(velall, axis=0))], 0, 0.725, linestyles='dashed', color='teal', alpha=0.75)    
+            # ax[i][1].vlines(50 * np.arange(-5, 30)[np.argmax(np.mean(velall, axis=0))], 0, 0.725, linestyles='dashed', color='teal', alpha=0.75)    
+            ax[i][1].vlines(50 * np.arange(-5, 30)[acc_idxs[0]], 0, 10, linestyles=[(0, (3, 6))], color='teal', alpha=0.75)
+            ax[i][1].vlines(50 * np.arange(-5, 30)[acc_idxs[1]], 0, 10, linestyles=[(0, (3, 6))], color='teal', alpha=0.75)
+            ax[i][1].vlines(50 * window_centers[dr2_idxs[0] + 5], 0, 10, linestyles=[(3, (3, 6))], color='blue', alpha=0.75)
+            ax[i][1].vlines(50 * window_centers[dr2_idxs[1] + 5], 0, 10, linestyles=[(4, (3, 6))], color='blue', alpha=0.75)
         else:
-            ax[i][1].vlines(50 * np.arange(-5, 30)[acc_idxs[0]], 0, 2.1, linestyles=[(0, (3, 6))], color='teal', alpha=0.75)
-            ax[i][1].vlines(50 * np.arange(-5, 30)[acc_idxs[1]], 0, 2.1, linestyles=[(0, (3, 6))], color='teal', alpha=0.75)
+            ax[i][1].vlines(50 * np.arange(-5, 30)[acc_idxs[0]], 0, 10, linestyles=[(0, (3, 6))], color='teal', alpha=0.75)
+            ax[i][1].vlines(50 * np.arange(-5, 30)[acc_idxs[1]], 0, 10, linestyles=[(0, (3, 6))], color='teal', alpha=0.75)
+            ax[i][1].vlines(50 * window_centers[dr2_idxs[0] + 5], 0, 10, linestyles=[(3, (3, 6))], color='blue', alpha=0.75)
+            ax[i][1].vlines(50 * window_centers[dr2_idxs[1] + 5], 0, 10, linestyles=[(4, (3, 6))], color='blue', alpha=0.75)
 
         if metric != 'position':
             atwins[i][0].set_xlim([0, 1500])
@@ -329,6 +337,21 @@ def plot_(dvt_df, vel_all, acc_all, metrics, ax, region):
         ax[i][1].set_xlabel('Time from reach start (ms)', fontsize=14)
         ax[i][0].set_ylabel('%s Prediction ' % labels[metric] + r'$r^2$', fontsize=14)
         ax[i][1].set_ylabel('Normalized ' + r'$\Delta$' + ' ' r'$r^2$', fontsize=14)
+
+        # In a separate plot, plot the paired distribution of 80 pct timings
+        # fig, ax2 = plt.subplots(figsize=(4, 4))
+        
+        # #ax2.scatter(np.zeros(34), )
+        # acc_thresholds = 0.8 * np.max(accall, axis=0)
+        # pdb.set_trace()
+        # acc_idxs = [np.argwhere(accall[k] > acc_thresholds[k])[[0, -1, 0]] for k in range(acc_thresholds.size)]
+        # pdb.set_trace()
+
+        # axin.scatter(np.zeros(35), pca_auc, color='k', alpha=0.75, s=3)
+        # axin.scatter(np.ones(35), fca_auc, color='r', alpha=0.75, s=3)
+        # axin.plot(np.array([(0, 1) for _ in range(pca_r2.shape[0])]).T, np.array([(y1, y2) for y1, y2 in zip(np.sum(pca_r2, axis=1), np.sum(fca_r2, axis=1))]).T, color='k', alpha=0.5)
+
+
 
         # In the last panel, plot the cross correlation statistics between delta decoding for each metric provided and velocity/acceleration
 
@@ -347,31 +370,119 @@ def plot_(dvt_df, vel_all, acc_all, metrics, ax, region):
         avg_vel = np.array(avg_vel).T
 
         dr = r2f - r2p
-        avg_vel_01 = avg_vel
-        avg_acc_01 = avg_acc
+        avg_vel_01 = MinMaxScaler().fit_transform(avg_vel)
+        avg_acc_01 = MinMaxScaler().fit_transform(avg_acc)
+        dr01 = MinMaxScaler().fit_transform(dr)
+        dr = dr01
+        # Alternative cross-correlation - average across the sessions
 
+        c1 = [avg_vel_01[0:20, k] @ avg_acc_01[0:20, k]/np.sqrt(avg_vel_01[0:20, k] @ avg_vel_01[0:20, k] * avg_acc_01[0:20, k] @ avg_acc_01[0:20, k])
+              for k in range(dr.shape[1])]
+        print(np.mean(c1))
+        c2 = [dr01[0:20, k] @ avg_acc_01[0:20, k]/np.sqrt(dr01[0:20, k] @ dr01[0:20, k] * avg_acc_01[0:20, k] @ avg_acc_01[0:20, k])
+              for k in range(dr.shape[1])]
+        c3 = [dr01[0:20, k] @ avg_vel_01[0:20, k]/np.sqrt(dr01[0:20, k] @ dr01[0:20, k] * avg_vel_01[0:20, k] @ avg_vel_01[0:20, k])
+              for k in range(dr.shape[1])]
+
+        # c4 = [avg_vel[0:20, k] @ avg_acc[0:20, k]/np.sqrt(avg_vel[0:20, k] @ avg_vel[0:20, k] * avg_acc[0:20, k] @ avg_acc[0:20, k])
+        #       for k in range(34)]
+        # c5 = [dr[0:20, k] @ avg_acc[0:20, k]/np.sqrt(dr[0:20, k] @ dr[0:20, k] * avg_acc[0:20, k] @ avg_acc[0:20, k])
+        #       for k in range(34)]
+        # c6 = [dr[0:20, k] @ avg_vel[0:20, k]/np.sqrt(dr[0:20, k] @ dr[0:20, k] * avg_vel[0:20, k] @ avg_vel[0:20, k])
+        #       for k in range(34)]
+        # c4 = [avg_vel_01[0:20, k] @ avg_acc_01[0:20, k]
+        #       for k in range(34)]
+        # c5 = [dr01[0:20, k] @ avg_acc_01[0:20, k]
+        #       for k in range(34)]
+        # c6 = [dr01[0:20, k] @ avg_vel_01[0:20, k]
+        #       for k in range(34)]
+        # Decorrelate the dr from avg_vel and measure its residual correlation with acceleration decorrelated from velocity
+
+        # Fit each time point separately
+        t0 = 0
+        t1 = 20
+
+        acc_residuals = []
+        dr_residuals = []
+        for t in range(30):
+            decorr_regressor = LinearRegression(fit_intercept=True)
+            decorr_regressor.fit(avg_vel_01.T[:, t][:, np.newaxis], dr01.T[:, t][:, np.newaxis])
+            dr_residuals.append(dr01.T[:, t] - decorr_regressor.predict(avg_vel_01.T[:, t][:, np.newaxis]).squeeze())
+
+            decorr_regressor = LinearRegression(fit_intercept=True)
+            decorr_regressor.fit(avg_vel_01.T[:, t][:, np.newaxis], avg_acc_01.T[:, t][:, np.newaxis])
+            acc_residuals.append(avg_acc_01.T[:, t] - decorr_regressor.predict(avg_vel_01.T[:, t][:, np.newaxis]).squeeze())
+
+        acc_residuals = np.array(acc_residuals)
+        dr_residuals = np.array(dr_residuals)
+
+        c7 = [dr_residuals[t0:t1, k] @ acc_residuals[t0:t1, k]/np.sqrt(dr_residuals[t0:t1, k] @ dr_residuals[t0:t1, k] * acc_residuals[t0:t1, k] @ acc_residuals[t0:t1, k])
+              for k in range(dr.shape[1])]
+        c7b = [dr_residuals[t0:t1, k] @ avg_acc_01[t0:t1, k] for k in range(dr.shape[1])]
+
+        # Compare this procedure to the the decorrelation of dr from avg_acc and measure its residual correlation with velocity decorrelated from acceleration
+        vel_residuals = []
+        dr_residuals = []
+        for t in range(30):
+            decorr_regressor = LinearRegression(fit_intercept=True)
+            decorr_regressor.fit(avg_acc_01.T[:, t][:, np.newaxis], dr01.T[:, t][:, np.newaxis])
+            dr_residuals.append(dr01.T[:, t] - decorr_regressor.predict(avg_acc_01.T[:, t][:, np.newaxis]).squeeze())
+
+            decorr_regressor = LinearRegression(fit_intercept=True)
+            decorr_regressor.fit(avg_acc_01.T[:, t][:, np.newaxis], avg_vel_01.T[:, t][:, np.newaxis])
+            vel_residuals.append(avg_vel_01.T[:, t] - decorr_regressor.predict(avg_acc_01.T[:, t][:, np.newaxis]).squeeze())
+
+        vel_residuals = np.array(vel_residuals)
+        dr_residuals = np.array(dr_residuals)
+
+        c8 = [dr_residuals[t0:t1, k] @ vel_residuals[t0:t1, k]/np.sqrt(dr_residuals[t0:t1, k] @ dr_residuals[t0:t1, k] * vel_residuals[t0:t1, k] @ vel_residuals[t0:t1, k]) 
+              for k in range(dr.shape[1])]
+        c8b = [dr_residuals[t0:t1, k] @ avg_vel_01[t0:t1, k] for k in range(dr.shape[1])]
+
+        print(scipy.stats.wilcoxon(c7, alternative='greater'))
+        print(scipy.stats.wilcoxon(c8, alternative='greater'))
+
+        # Decorrelate the avg_acc_01 from avg_vel_01. Is there still residual cross-correlation?
+        #decorrelate()
+
+
+        # dr -= np.mean(dr, axis=0)
+        # avg_vel_01 -= np.mean(avg_vel_01, axis=0)
+        # avg_acc_01 -= np.mean(avg_acc_01, axis=0)
+
+        # Decorrelate the dr from the avg_vel
+        t1 = 0
+        t2 = 20
         for k in range(avg_vel.shape[1]):        
-            acf_coef[2*i, k] = dr[:, k] @ avg_vel_01[:, k]/np.sqrt(dr[:, k] @ dr[:, k] * avg_vel_01[:, k] @ avg_vel_01[:, k])
-            acf_coef[2*i + 1, k] = dr[:, k] @ avg_acc_01[:, k]/np.sqrt(dr[:, k] @ dr[:, k] * avg_acc_01[:, k] @ avg_acc_01[:, k])
+            acf_coef[2*i, k] = dr[t1:t2, k] @ avg_vel_01[t1:t2, k]/np.sqrt(dr[t1:t2, k] @ dr[t1:t2, k] * avg_vel_01[t1:t2, k] @ avg_vel_01[t1:t2, k])
+            acf_coef[2*i + 1, k] = dr[t1:t2, k] @ avg_acc_01[t1:t2, k]/np.sqrt(dr[t1:t2, k] @ dr[t1:t2, k] * avg_acc_01[t1:t2, k] @ avg_acc_01[t1:t2, k])
+            
+
+    acc_vel_corr = np.zeros(avg_vel.shape[1])
+    for k in range(avg_vel.shape[1]):
+        acc_vel_corr[k] = avg_vel[:, k] @ avg_acc[:, k]/np.sqrt(avg_vel[:, k] @ avg_vel[:, k] * avg_acc[:, k] @ avg_acc[:, k])
 
     #print(np.mean(acf_coef.T, axis=1))
-    ax[-1].set_ylim([0, 1.05])
+    ax[-1].set_ylim([0.5, 1.05])
     ax[-1].set_ylabel(r'$\Delta r^2$' + '/Kinematic Cross-Corr.', fontsize=14)
-    ax[-1].set_yticks([0, 0.5, 1.])
+    ax[-1].set_yticks([0.5, 1.])
 
     # Paired difference plot isntead of boxplot
-    ax[-1].scatter(np.zeros(acf_coef.shape[1]), acf_coef[0, :], color='b', alpha=0.75, s=3)
-    ax[-1].scatter(np.ones(acf_coef.shape[1]), acf_coef[1, :], color='b', alpha=0.75, s=3)
-    ax[-1].plot(np.array([0]))
-    x = np.array([(0, 1) for _ in range(acf_coef.shape[1])]).T
-    y = np.array([(y1, y2) for y1, y2 in zip(acf_coef[0, :], acf_coef[1, :])]).T
-    ax[-1].plot(x, y, color='k', alpha=0.5)
+    # ax[-1].scatter(np.zeros(acf_coef.shape[1]), acf_coef[0, :], color='b', alpha=0.75, s=3)
+    # ax[-1].scatter(np.ones(acf_coef.shape[1]), acf_coef[1, :], color='b', alpha=0.75, s=3)
+    # ax[-1].plot(np.array([0]))
+    # x = np.array([(0, 1) for _ in range(acf_coef.shape[1])]).T
+    # y = np.array([(y1, y2) for y1, y2 in zip(acf_coef[0, :], acf_coef[1, :])]).T
+    # ax[-1].plot(x, y, color='k', alpha=0.5)
 
-    # bplot = ax[-1].boxplot(acf_coef.T, medianprops={'linewidth':0}, showfliers=False, patch_artist=True)
+    #x = np.concatenate(acf_coef.T, acc_vel_corr[:, np.newaxis])
+    x = acf_coef.T
+    whiskerprops=dict(linewidth=0)
+    bplot = ax[-1].boxplot(x, medianprops={'linewidth':1, 'color':'k'}, showfliers=False, patch_artist=True, showcaps=False, whiskerprops=whiskerprops)
 
     ticklabels = []
     for metric in metrics:
-        ticklabels.extend([r'$\Delta$' + ' %s' % labels[metric], 'Acc./' + r'$\Delta$' + ' %s' % labels[metric]])
+        ticklabels.extend(['Vel./' + r'$\Delta$' + ' %s' % labels[metric], 'Acc./' + r'$\Delta$' + ' %s' % labels[metric]])
 
     ax[-1].set_xticklabels(ticklabels, rotation=45, ha='right')
     cdict = {'position':pos_color, 'velocity':vel_color, 'acceleration':acc_color}
@@ -387,7 +498,7 @@ def plot_(dvt_df, vel_all, acc_all, metrics, ax, region):
 
     # Statistical tests
     for i in range(len(metrics)):
-        print('Metric: %s, Region: %s' % (metrics[i], region))
+        print('Metric: %s, Region: %s, %f vs. %f' % (metrics[i], region, np.median(acf_coef[2*i, :]), np.median(acf_coef[2*i + 1, :])))
         print(scipy.stats.wilcoxon(acf_coef[2*i, :], acf_coef[2*i + 1, :], alternative='less'))
 
     # Return twin axes
@@ -405,7 +516,7 @@ if __name__ == '__main__':
 
         ax = [plt.subplot(gs[0, 0]), plt.subplot(gs[0, 1]), plt.subplot(gs[1, 0]), plt.subplot(gs[1, 1]), plt.subplot(gs[0, 2]), plt.subplot(gs[1, 2])]
 
-        # (1) Vel decoding, (2) Acc decoding, (3) Delta plots, (4) Box plots
+        # # (1) Vel decoding, (2) Acc decoding, (3) Delta plots, (4) Box plots
         atwins = plot_(dvt_df, vel_all, acc_all, ['velocity'], [(ax[0], ax[2]), ax[4]], 'M1')
 
         # resize axes

@@ -1,0 +1,106 @@
+$$ \Psi = C M + (I_N - C C^\top) T$$
+
+where $M$ is skew symmetric and $t$ is arbitrary. Let $C_{\text{slow}}$ be the projection matrix onto the slow eigenspace of $A$ of dimension d. Since we work in the eigenbasis of $A$, $C_{\text{slow}} = \begin{bmatrix} I_{d} & 0 \end{bmatrix}$. At this point, elements of the tangent space take on the particularly simple form
+
+$$ \Psi = \begin{bmatrix} M & T \end{bmatrix}$$
+
+where now $M$ is a $d \times d$ skew symmetric matrix and $T \in \mathbb{R}^{d \times (N - d)}$ is arbitrary. A basis for the tangent space is provided by the set of matrices $\{M_{ij}, T_{kl}, i = 2, ...d, j = 1, ..., i - 1, k = 1, ..., d, l = 1, ..., N - d \}$ where $M_{ij}$ is a matrix with entry $1$ at index $(i, j)$ and $-1$ at index $(j, i)$ and zero otherwise, and $T_{kl}$ is the matrix with entry $1$ at index $(k, l)$ and zero otherwise. Denote by $D_\Psi Q_m$ the directional derivative of $Q_m$ along the direction of $\Psi$, viewing $Q_m$ as a function of C (denoted $Q_m[C]$):
+
+\begin{align}
+D_\Psi Q_m = \lim_{\alpha \to 0} \frac{Q_m[C_{\text{slow}} + \alpha \Psi] - Q_m[C_{\text{slow}}]}{\alpha}
+\label{eq:directional_derivative}
+\end{align}
+   
+Let $\Psi_{ij, kl}$ denote the tangent matrix $\begin{bmatrix} M_{ij} & T_{kl} \end{bmatrix}$. Before calculating $Q_m(C_{\text{slow}} + \alpha \Psi_{ij, kl})$ explicitly, we first observe that as long as the NK iterations are initialized with a diagonal $Q_0$, then the diagonal nature of $C_{\text{slow}}^\top C_{\text{slow}}$ ensures that all $Q_m$ will subsequently remain diagonal matrices. In fact, it can be shown that $\lim_{k \to \infty} Q_m = Q$ will also be diagonal, in this case. We write $A$ in block form as $\begin{bmatrix} \Lambda_{||} & 0 \\ 0 & \Lambda_{\perp} \end{bmatrix}$, and similarly $Q_{m - 1} = \begin{bmatrix} \mathcal{Q}_{||} & 0 \\ 0 & \mathcal{Q}_\perp \end{bmatrix}$, where $\Lambda_{||}, \mathcal{Q}_{||}$ are $d \times d$ diagonal matrices defined on the image of $C_{\text{slow}}$ and $\Lambda_\perp, \mathcal{Q}_\perp$ are diagonal matrices defined on the kernel of $C_{\text{slow}}$. We denote the individual diagonal elements of $\Lambda_{||}, \mathcal{Q}_{||}$ as $\lambda_i, \mathcal{Q}_i, i = 1, ..., d$ and of $\Lambda_{\perp}, \mathcal{Q}_\perp$ as $\lambda_i, \mathcal{Q}_i, i = d , ..., N - d$. Then, equation \ref{eq:lyapunoq_nk} becomes:
+
+\begin{align}
+    &\left(\begin{bmatrix} \Lambda_{||} & 0 \\ 0 & \Lambda_{\perp} \end{bmatrix} - \begin{bmatrix} (I_d - \alpha^2 M_{ij}^2) \mathcal{Q}_{||} & (\alpha T_{kl} + \alpha^2 M_{ij}^\top T_{kl}) \mathcal{Q}_\perp \\ (\alpha T_{kl}^\top + \alpha^2 T_{kl}^\top M_{ij}) \mathcal{Q}_{||} & \alpha^2 T_{kl}^\top T_{kl} V_\perp \end{bmatrix} \right) Q_m[C_{\text{slow}} + \Psi_{ij, kl}] \nonumber \\
+    & + Q_m[C_{\text{slow}} + \Psi_{ij, kl}]     \left(\begin{bmatrix} \Lambda_{||} & 0 \\ 0 & \Lambda_{\perp} \end{bmatrix} - \begin{bmatrix} \mathcal{Q}_{||}(I_d - \alpha^2 M_{ij}^2) & \mathcal{Q}_{||} (\alpha T_{kl} + \alpha^2 M_{ij}^\top T_{kl}) \\ V_\perp (\alpha T_{kl}^\top + \alpha^2 T_{kl}^\top M_{ij}) & V_\perp \alpha^2 T_{kl}^\top T_{kl} \end{bmatrix} \right) \nonumber \\
+    & + I_n + \begin{bmatrix} \mathcal{Q}_{||}(I_d - \alpha^2 M_{ij}^2) \mathcal{Q}_{||} & \mathcal{Q}_{||} (\alpha T_{kl} + \alpha^2 M_{ij}^\top T_{kl}) \mathcal{Q}_\perp \\ \mathcal{Q}_\perp (\alpha T_{kl}^\top + \alpha^2 T_{kl}^\top M_{ij}) \mathcal{Q}_{||} & \alpha^2 V_\perp T_{kl}^\top T_{kl} V_\perp \end{bmatrix} = 0
+    \label{eq:lyapunoq_nk_1}
+\end{align}
+
+where we have used $M^\top = -M$. The equivalent equation for $Q_m(C_{\text{slow}})$ reads:
+
+\begin{align}
+    &\left(\begin{bmatrix} \Lambda_{||} & 0 \\ 0 & \Lambda_{\perp} \end{bmatrix} - \begin{bmatrix} \mathcal{Q}_{||}& 0 \\ 0 & 0 \end{bmatrix} \right) Q_m[C_{\text{slow}}] + Q_m[C_{\text{slow}}]     \left(\begin{bmatrix} \Lambda_{||} & 0 \\ 0 & \Lambda_{\perp} \end{bmatrix} - \begin{bmatrix} \mathcal{Q}_{||} & 0 \\ 0 & 0 \end{bmatrix} \right)
+    + I_n + \begin{bmatrix} \mathcal{Q}_{||}^2  & 0 \\ 0 & 0 \end{bmatrix} = 0  
+    \label{eq:lyapunoq_nk_2}
+\end{align}
+
+This latter equation is easily solved to yield:
+
+$$Q_m[C_{\text{slow}}] = \begin{bmatrix} \frac{1}{2}\left(I_d + \mathcal{Q}_{||}^2\right)\left(\mathcal{Q}_{||} - \Lambda_{||} \right)^{-1} & 0 \\ 0 & -\frac{1}{2}\Lambda_{\perp}^{-1} \end{bmatrix}     $$
+
+To explicitly solve the former equation, we recall that the matrices $M_{ij}$ and $T_{kl}$ have only two and one nonzero terms, respectively. $M_{ij}^2$ contains two nonzero terms at index $(i, i)$ and $(j, j)$. $T_{kl}^\top T_{kl}$ contains one non-zero term at index $(l, l)$. $M_{ij}^\top T_{kl}$ contains a single nonzero term at $(i, l)$ or $(j, l)$ only if $k = i$ or $k = j$, respectively.  Accordingly, we distinguish between where $k = i$ or $k = j$ (without loss of generality we may assume that $k = j$), and where $k \neq i$ and $k \neq j$.
+
+In what follows, we will denote the $(i, j)$ entry of $Q_m[C_{\text{slow}} + \alpha \Psi_{ij, kl}]$ as $q_{ij}$.
+
+\begin{enumerate}
+    \item \emph{Case 1: $k = j$}
+    In this case, careful inspection of eq. \ref{eq:lyapunoq_nk_1} reveals that it differs from eq. \ref{eq:lyapunoq_nk_2} only within a $3 \times 3$ subsystem:
+
+    \begin{align*}
+    &\begin{bmatrix}
+        \mathcal{S}_{11} & \mathcal{S}_{12} & \mathcal{S}_{13} \\
+        \mathcal{S}_{21} & \mathcal{S}_{22} & \mathcal{S}_{23} \\
+        \mathcal{S}_{31} & \mathcal{S}_{32} & \mathcal{S}_{33}
+    \end{bmatrix} = 0\\
+    \end{align*}
+    Note that this matrix is symmetric, yielding 6 equations for 6 unknowns:
+    \begin{align*}
+    \mathcal{S}_{11} &= \alpha^{2} \mathcal{Q}_{i}^{2} + 2 \alpha^{2} \mathcal{Q}_{d+ l} q_{i, d+l} + \mathcal{Q}_{i}^{2} + 2 q_{ii} \left(- \alpha^{2} \mathcal{Q}_{i} + \lambda_{i} - \mathcal{Q}_{i}\right) + 1 \\
+    \mathcal{S}_{12} &= \alpha^{2} \mathcal{Q}_{d + l} q_{j, d + l} - \alpha \mathcal{Q}_{d + l} q_{i, d+l} + q_{ij} \left(- \alpha^{2} \mathcal{Q}_{i} + \lambda_{i} - \mathcal{Q}_{i}\right) + q_{ij} \left(- \alpha^{2} \mathcal{Q}_{j} + \lambda_{j} - \mathcal{Q}_{j}\right) \\
+    \mathcal{S}_{13} &= - \alpha^{2} \mathcal{Q}_{i} \mathcal{Q}_{d + l} + \alpha^{2} \mathcal{Q}_{i} q_{ii} + \alpha^{2} \mathcal{Q}_{d + l} q_{d + l} - \alpha \mathcal{Q}_{j} q_{ij} + q_{i, d + l} \left(- \alpha^{2} \mathcal{Q}_{d + l} + \lambda_{d + l}\right) + q_{i, d + l} \left(- \alpha^{2} \mathcal{Q}_{i} + \lambda_{i} - \mathcal{Q}_{i}\right)\\    
+    % \mathcal{S}_{21} &= \alpha^{2} \mathcal{Q}_{d + l} q_{j, d+l} - \alpha \mathcal{Q}_{d + l} q_{i, d + l} + q_{ij} \left(- \alpha^{2} \mathcal{Q}_{i} + \lambda_{i} - \mathcal{Q}_{i}\right) + q_{ij} \left(- \alpha^{2} \mathcal{Q}_{j} + \lambda_{j} - \mathcal{Q}_{j}\right)\\
+    \mathcal{S}_{22} &= \alpha^{2} \mathcal{Q}_{j}^{2} - 2 \alpha \mathcal{Q}_{d+l} q_{j, d+ l} + \mathcal{Q}_{j}^{2} + 2 q_{jj} \left(- \alpha^{2} \mathcal{Q}_{j} + \lambda_{j} - \mathcal{Q}_{j}\right) + 1\\
+    \mathcal{S}_{23} &= \alpha^{2} \mathcal{Q}_{i} q_{ij} + \alpha \mathcal{Q}_{j} \mathcal{Q}_{d+l} - \alpha \mathcal{Q}_{j} q_{jj} - \alpha \mathcal{Q}_{d+l} q_{d+l,d+l} + q_{j, d+l} \left(- \alpha^{2} \mathcal{Q}_{d+l} + \lambda_{d+l}\right) + q_{j, d+l} \left(- \alpha^{2} \mathcal{Q}_{j} + \lambda_{j} - \mathcal{Q}_{j}\right)\\
+    % \mathcal{S}_{31} &= - \alpha^{2} \mathcal{Q}_{i} \mathcal{Q}_{d + l} + \alpha^{2} \mathcal{Q}_{i} q_{ii} + \alpha^{2} \mathcal{Q}_{d + l} q_{d + l} - \alpha \mathcal{Q}_{j} q_{ij} + q_{i, d + l} \left(- \alpha^{2} \mathcal{Q}_{d + l} + \lambda_{d + l}\right) + q_{i, d + l} \left(- \alpha^{2} \mathcal{Q}_{i} + \lambda_{i} - \mathcal{Q}_{i}\right)\\
+    % \mathcal{S}_{32} &= \alpha^{2} \mathcal{Q}_{i} q_{ij} + \alpha \mathcal{Q}_{j} \mathcal{Q}_{d + l} - \alpha \mathcal{Q}_{j} q_{jj} - \alpha \mathcal{Q}_{d + l} q_{d + l} + q_{j, d + l} \left(- \alpha^{2} \mathcal{Q}_{d + l} + \lambda_{d + l}\right) + q_{j, d + l} \left(- \alpha^{2} \mathcal{Q}_{j} + \lambda_{j} - \mathcal{Q}_{j}\right)\\
+    \mathcal{S}_{33} &= 2 \alpha^{2} \mathcal{Q}_{i} q_{i, d+ l} + \alpha^{2} \mathcal{Q}_{d+l}^{2} - 2 \alpha \mathcal{Q}_{j} q_{j, d + l} + 2 q_{d+l,d+l} \left(- \alpha^{2} \mathcal{Q}_{d+l} + \lambda_{d+l}\right) + 1
+    \end{align*}
+    
+    Direct solution is still infeasible, but noting our interest is in the behavior of solutions as $\alpha \to 0$, and only terms of $O(\alpha)$ will survive in the limit in eq. \ref{eq:directional_derivative}, we consider solving these equations perturbatively. That is, we express each $q_{ij}$ in a power series in $\alpha$: $q_{ij} = q_{ij}^{(0)} + q_{ij}^{(1)} \alpha + O(\alpha^2)$. One obtains each coefficient in the expansion by plugging this form into the above matrix and setting all terms of the corresponding order in $\alpha$ to 0. The lowest order term, $q_{ij}^{(0)}$, coincides with the solution of the unperturbed system, eq. \ref{eq:lyapunoq_nk_2}. Plugging in the expansion into the $3 \times 3$ subsystem above, as well as the solution of the unperturbed system, and collecting all coefficients proportional to $\alpha$ yields the following system of equations:
+
+    \begin{align*}
+    &\begin{bmatrix}
+        \mathcal{S}^{(1)}_{11} & \mathcal{S}^{(1)}_{12} & \mathcal{S}^{(1)}_{13} \\
+        \mathcal{S}^{(1)}_{21} & \mathcal{S}^{(1)}_{22} & \mathcal{S}^{(1)}_{23} \\
+        \mathcal{S}^{(1)}_{31} & \mathcal{S}^{(1)}_{32} & \mathcal{S}^{(1)}_{33}
+    \end{bmatrix} = 0\\
+    \mathcal{S}^{(1)}_{11} &= 2 \lambda_{i} q_{ii}^{(1)} - 2 \mathcal{Q}_{i} q_{ii}^{(1)}\\
+    \mathcal{S}^{(1)}_{12} &= \lambda_{i} q_{ij}^{(1)} + \lambda_{j} q_{ij}^{(1)} - \mathcal{Q}_{i} q_{ij}^{(1)} - \mathcal{Q}_{j} q_{ij}^{(1)} \\
+    \mathcal{S}^{(1)}_{13} &= \lambda_{i} q_{i, d+l}^{(1)} + \lambda_{d + l} q_{i, d+l}^{(1)} - \mathcal{Q}_{i} q_{i, d+l}^{(1)} \\
+    % \mathcal{S}^{(1)}_{21} &= \lambda_{i} q_{ij}^{(1)} + \lambda_{j} q_{ij}^{(1)} - \mathcal{Q}_{i} q_{ij}^{(1)} - \mathcal{Q}_{j} q_{ij}^{(1)}\\
+    \mathcal{S}^{(1)}_{22} &= 2 \lambda_{j} q_{jj}^{(1)} - 2 \mathcal{Q}_{j} q_{jj}^{(1)}\\
+    \mathcal{S}^{(1)}_{23} &= \lambda_{j} q_{j, d+l}^{(1)} + \lambda_{d + l} q_{j, d+l}^{(1)} + \mathcal{Q}_{j} \mathcal{Q}_{d + l} - \mathcal{Q}_{j} q_{j, d+l}^{(1)} - \frac{\mathcal{Q}_{j} \left(\mathcal{Q}_{j}^{2} + 1\right)}{- 2 \lambda_{j} + 2 \mathcal{Q}_{j}} + \frac{\mathcal{Q}_{d + l}}{2 \lambda_{d + l}}\\
+    % \mathcal{S}^{(1)}_{31} &= \lambda_{i} q_{i, d+l}^{(1)} + \lambda_{d + l} q_{i, d+l}^{(1)} - \mathcal{Q}_{i} q_{i, d+l}^{(1)}\\
+    % \mathcal{S}^{(1)}_{32} &= \lambda_{j} q_{j, d+l}^{(1)} + \lambda_{d + l} q_{j, d+l}^{(1)} + \mathcal{Q}_{j} \mathcal{Q}_{d + l} - \mathcal{Q}_{j} q_{j, d+l}^{(1)} - \frac{\mathcal{Q}_{j} \left(\mathcal{Q}_{j}^{2} + 1\right)}{- 2 \lambda_{j} + 2 \mathcal{Q}_{j}} + \frac{\mathcal{Q}_{d + l}}{2 \lambda_{d + l}}\\
+    \mathcal{S}^{(1)}_{33} &= 2 \lambda_{d + l} q_{d + l}^{(1)}
+    \end{align*}    
+
+Solving this system yields the following solutions for the $q_{ij}^{(1)}$:
+\begin{align*}
+    q_{ii}^{(1)} &= 0\\
+    q_{jj}^{(1)} &= 0\\
+    q_{d+l,d+l}^{(1)} &= 0\\
+    q_{ij}^{(1)} &= 0 \\
+    q_{i, d+l}^{(1)} &= 0 \\
+    q_{j, d+l}^{(1)} &= \frac{- 2 \lambda_{j} \lambda_{d + l} \mathcal{Q}_{j} \mathcal{Q}_{d + l} - \lambda_{j} \mathcal{Q}_{d + l} - \lambda_{d + l} \mathcal{Q}_{j}^{3} + 2 \lambda_{d + l} \mathcal{Q}_{j}^{2} \mathcal{Q}_{d + l} - \lambda_{d + l} \mathcal{Q}_{j} + \mathcal{Q}_{j} \mathcal{Q}_{d + l}}{2 \lambda_{j}^{2} \lambda_{d + l} + 2 \lambda_{j} \lambda_{d + l}^{2} - 4 \lambda_{j} \lambda_{d + l} \mathcal{Q}_{j} - 2 \lambda_{d + l}^{2} \mathcal{Q}_{j} + 2 \lambda_{d + l} \mathcal{Q}_{j}^{2}}
+\end{align*}
+
+\item \emph{Case 2}: $k \neq i, k \neq j$. In this case, we must again consider the $3 \times 3$ subsystem indexed by $i, j, d + l$, but since $M_{ij} T_{kl}$ is a matrix of all zeros, the expression simplifies considerably:
+
+\begin{align*}
+    &\begin{bmatrix}
+        \mathcal{S}_{11} & \mathcal{S}_{12} & \mathcal{S}_{13} \\
+        \mathcal{S}_{21} & \mathcal{S}_{22} & \mathcal{S}_{23} \\
+        \mathcal{S}_{31} & \mathcal{S}_{32} & \mathcal{S}_{33}
+    \end{bmatrix} = 0\\
+    \mathcal{S}_{11} &= \alpha^{2} \mathcal{Q}_{i}^{2} + \mathcal{Q}_{i}^{2} + 2 q_{i} \left(- \alpha^{2} \mathcal{Q}_{i} + \lambda_{i} - \mathcal{Q}_{i}\right) + 1\\
+    \mathcal{S}_{12} &= q_{ij} \left(- \alpha^{2} \mathcal{Q}_{i} + \lambda_{i} - \mathcal{Q}_{i}\right) + q_{ij} \left(- \alpha^{2} \mathcal{Q}_{j} + \lambda_{j} - \mathcal{Q}_{j}\right)\\
+    \mathcal{S}_{13} &= \lambda_{d + l} q_{i, d + l} + q_{i, d + l} \left(- \alpha^{2} \mathcal{Q}_{i} + \lambda_{i} - \mathcal{Q}_{i}\right)\\
+    \mathcal{S}_{22} & \alpha^{2} \mathcal{Q}_{j}^{2} + \mathcal{Q}_{j}^{2} + 2 q_{j} \left(- \alpha^{2} \mathcal{Q}_{j} + \lambda_{j} - \mathcal{Q}_{j}\right) + 1 \\
+    \mathcal{S}_{23} &= \lambda_{d + l} q_{j, d + l} + q_{j, d + l} \left(- \alpha^{2} \mathcal{Q}_{j} + \lambda_{j} - \mathcal{Q}_{j}\right)\\
+    \mathcal{S}_{33} &= 2 \lambda_{d + l} q_{d + l} + 1    
+\end{align*}

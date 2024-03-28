@@ -517,6 +517,9 @@ class PoolWorker():
             dimreduc_idx = dim_fold_tuples.index((dim_val, fold_idx, alpha))
             coef_ = dimreduc_results[dimreduc_idx]['coef']
 
+        # Chop off superfluous dimensions (sometimes PCA fits returned all columns of the projection)
+        coef_ = coef_[:, 0:dim_val]
+
         # Calculate a BIC score associated with the number of coefficients - only useful for the sparse case
         # Some hardcoded thresholds
         loadings = calc_loadings(coef_, normalize=False)
@@ -809,7 +812,6 @@ def decoding_(dimreduc_file, decoder, data_path,
     if comm is None:
         with open(dimreduc_file, 'rb') as f:
             dimreduc_results = pickle.load(f)
-
         # Pass in for manual override for use in cleanup
         if dim_vals is None:
             dim_vals = args['task_args']['dim_vals']

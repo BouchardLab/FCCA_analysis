@@ -58,8 +58,8 @@ if __name__ == '__main__':
 
     calcs = False
     rot_trajectories = False
-    dyn_range = False
-    boxplots = True
+    dyn_range = True
+    boxplots = False
 
     # Where to save?
     if len(sys.argv) > 1:
@@ -315,7 +315,12 @@ if __name__ == '__main__':
         dca_devorder = np.argsort(dca_straightdev)[::-1]
 
         ############## Trajectory Plots #################
-        fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+
+
+        # Save as two separate figures
+        fig1, ax1 = plt.subplots(1, 1, figsize=(5, 5))
+        fig2, ax2 = plt.subplots(1, 1, figsize=(5, 5))
+        ax = [ax1, ax2]
 
         for i in range(0, 25):
             
@@ -359,19 +364,21 @@ if __name__ == '__main__':
             theta0 = np.arctan2(trajectory[15, 1], trajectory[15, 0])
 
             trajectory = np.array([R(theta0 - np.pi/4) @ t[0:2] for t in trajectory])
+
+            ax[0].plot(trajectory[:, 0], trajectory[:, 1], '#c73d34', alpha=0.5)
+            ax[0].arrow(trajectory[-1, 0], trajectory[-1, 1], 
+                        trajectory[-1, 0] - trajectory[-2, 0], trajectory[-1, 1] - trajectory[-2, 1], 
+                        head_width=0.05, color="#c73d34", alpha=0.5)
+
         _, p = scipy.stats.wilcoxon(maxim[:, 0, 2], maxim[:, 1, 2], alternative='less')
         print('Re p:%f' % p)
 
-        ax[0].plot(trajectory[:, 0], trajectory[:, 1], '#c73d34', alpha=0.5)
-        ax[0].arrow(trajectory[-1, 0], trajectory[-1, 1], 
-                    trajectory[-1, 0] - trajectory[-2, 0], trajectory[-1, 1] - trajectory[-2, 1], 
-                    head_width=0.05, color="#c73d34", alpha=0.5)
 
-        ax[0].set_xticklabels([])
-        ax[0].set_yticklabels([])
+        # ax[0].set_xticklabels([])
+        # ax[0].set_yticklabels([])
         
-        ax[1].set_xticklabels([])
-        ax[1].set_yticklabels([])
+        # ax[1].set_xticklabels([])
+        # ax[1].set_yticklabels([])
 
         ax[0].set_aspect('equal')   
         ax[1].set_aspect('equal')
@@ -381,18 +388,24 @@ if __name__ == '__main__':
         ax[0].set_xlim([-2.2, 3.5])
         ax[0].set_ylim([-2.2, 3.5])
 
-        ax[1].set_title('jPCA on PCA', fontsize=14)
-        ax[1].set_ylabel('jPC2', fontsize=14)
-        ax[1].set_xlabel('jPC1', fontsize=14)
+        # ax[1].set_title('jPCA on PCA', fontsize=14)
+        # ax[1].set_ylabel('jPC2', fontsize=14)
+        # ax[1].set_xlabel('jPC1', fontsize=14)
 
-        ax[0].set_title('jPCA on FCCA', fontsize=14)
-        ax[0].set_ylabel('jPC2', fontsize=14)
-        ax[0].set_xlabel('jPC1', fontsize=14)
+        # ax[0].set_title('jPCA on FCCA', fontsize=14)
+        # ax[0].set_ylabel('jPC2', fontsize=14)
+        # ax[0].set_xlabel('jPC1', fontsize=14)
 
         ax[0].spines['right'].set_color('none')
         ax[0].spines['top'].set_color('none')
-        ax[0].spines['left'].set_color('none')
-        ax[0].spines['bottom'].set_color('none')
+        ax[0].spines['left'].set_position('zero')
+        ax[0].spines['bottom'].set_position('zero')
+        ax[0].plot(2, 0, ">k", clip_on=False)
+        ax[0].plot(0, 2, "^k", clip_on=False)
+        ax[0].spines['left'].set_bounds(0, 2)
+        ax[0].spines['bottom'].set_bounds(0, 2)
+        # ax[0].spines['left'].set_color('none')
+        # ax[0].spines['bottom'].set_color('none')
         ax[0].set_xticks([])
         ax[0].set_yticks([])
         ax[1].set_xticks([])
@@ -400,12 +413,23 @@ if __name__ == '__main__':
 
         ax[1].spines['right'].set_color('none')
         ax[1].spines['top'].set_color('none')
-        ax[1].spines['left'].set_color('none')
-        ax[1].spines['bottom'].set_color('none')
+        ax[1].spines['left'].set_position('zero')
+        ax[1].spines['bottom'].set_position('zero')
+        ax[1].spines['left'].set_bounds(0, 2)
+        ax[1].spines['bottom'].set_bounds(0, 2)
+        ax[1].plot(2, 0, ">k", clip_on=False)
+        ax[1].plot(0, 2, "^k", clip_on=False)
+
+        # ax[1].spines['left'].set_color('none')
+        # ax[1].spines['bottom'].set_color('none')
         # ax[1].set_xticks([])
         # ax[1].set_yticks([])
-        fig.tight_layout()
-        fig.savefig('%s/trajectories.pdf' % figpath, bbox_inches='tight', pad_inches=0)
+        fig1.tight_layout()
+        fig1.savefig('%s/trajectories_a.pdf' % figpath, bbox_inches='tight', pad_inches=0)
+
+        fig2.tight_layout()
+        fig2.savefig('%s/trajectories_b.pdf' % figpath, bbox_inches='tight', pad_inches=0)
+
 
     ############## Trajectory Amplification #################
     if dyn_range:
@@ -514,19 +538,34 @@ if __name__ == '__main__':
                 f2.savefig('/home/akumar/nse/neural_control/figs/amplification/%d_e_%s2.pdf' % (didx, dimreduc_method), bbox_inches='tight', pad_inches=0)
     if boxplots:
         # Boxplots
-        fig, ax = plt.subplots(1, 2, figsize=(4, 6))
+        fig, ax = plt.subplots(2, 1, figsize=(6, 3))
         medianprops = dict(linewidth=1, color='b')
         whiskerprops=dict(linewidth=0)
         #bplot = ax.boxplot([d_U[:, 2, 1], d_U[:, 3, 1]], patch_artist=True, medianprops=medianprops, notch=True, vert=False, showfliers=False)
-        bplot = ax[0].boxplot([maxim[:, 0, 1], maxim[:, 1, 1], maxim_control[..., 1].ravel()], patch_artist=True, 
-                        medianprops=medianprops, notch=False, vert=True, showfliers=False, widths=[0.25, 0.25, 0.25],
+        # Plot relative to the control...test for difference from zero
+
+        # Center relative to random - per recording session
+        mu = np.mean(maxim_control[..., 1], axis=1)
+        sigma = np.std(maxim_control[..., 1], axis=1)
+        r1 = maxim[:, 0, 1] - mu
+        r2 = maxim[:, 1, 1] - mu
+
+        bplot = ax[0].boxplot([r1, r2], patch_artist=True, 
+                        medianprops=medianprops, notch=False, vert=False, showfliers=False, widths=[0.3, 0.3],
                         whiskerprops=whiskerprops, showcaps=False)
 
         # _, p = scipy.stats.wilcoxon(d_U[:, 2, 1], d_U[:, 3, 1])
         _, p = scipy.stats.wilcoxon(maxim[:, 0, 1], maxim[:, 1, 1], alternative='greater')
         print('Im p:%f' % p)
 
-        # _, p = scipy.stats.wilcoxon(maxim[:, 0, 2], maxim[:, 1, 2], alternative='less')
+        # test that each is stochastically greater than the median random
+        x1 = maxim[:, 0, 1] - np.median(maxim_control[..., 1].ravel())
+        x2 = maxim[:, 1, 1] - np.median(maxim_control[..., 1].ravel())
+
+        _, p1 = scipy.stats.wilcoxon(x1, alternative='greater')
+        _, p2 = scipy.stats.wilcoxon(x2, alternative='greater')
+
+       # _, p = scipy.stats.wilcoxon(maxim[:, 0, 2], maxim[:, 1, 2], alternative='less')
         # print('Re p:%f' % p)
 
         # Mutliple comparison adjusted test of maxim control against PCA and FCCA
@@ -538,14 +577,15 @@ if __name__ == '__main__':
         method1 = 'FBC'
         method2 = 'FFC'
     
-        ax[0].set_xticklabels([method1, method2, 'Random'], fontsize=12, rotation=45)
-        ax[0].set_yticks([0.05, 0.15, 0.25, ])
+        ax[0].set_yticklabels([method1, method2], fontsize=12)
+        ax[0].set_xticks([0.0, 5, 10])
+        ax[0].set_xlim([0, 10])
         ax[0].tick_params(axis='both', labelsize=12)
         #ax.set_ylabel(r'$\sum_i Im(\lambda_i)$', fontsize=22)
-        ax[0].set_ylabel('Strength of Rotational Component', fontsize=12)
+        ax[0].set_xlabel('Strength of Rotational Component above Random', fontsize=12)
         #ax.set_title('****', fontsize=14)
 
-        #ax.invert_xaxis()
+        ax[0].invert_yaxis()
     
         # fill with colors
         colors = ['red', 'black', 'blue']   
@@ -553,21 +593,36 @@ if __name__ == '__main__':
             patch.set_facecolor(color)
             patch.set_alpha(0.6)
         whiskerprops = dict(linewidth=0)
-        bplot = ax[1].boxplot([maxim[:, 0, 2], maxim[:, 1, 2], maxim_control[..., 2].ravel()], patch_artist=True, 
-                        medianprops=medianprops, notch=False, vert=True, showfliers=False, widths=[0.25, 0.25, 0.25],
+
+        mu = np.mean(maxim_control[..., 2], axis=1)
+        sigma = np.std(maxim_control[..., 2], axis=1)
+        r1 = maxim[:, 0, 2] - mu
+        r2 = maxim[:, 1, 2] - mu
+
+        bplot = ax[1].boxplot([r1, r2], patch_artist=True, 
+                        medianprops=medianprops, notch=False, vert=False, showfliers=False, widths=[0.3, 0.3],
                         whiskerprops=whiskerprops, showcaps=False)
 
+        x1 = maxim[:, 0, 2] - np.median(maxim_control[..., 2].ravel())
+        x2 = maxim[:, 1, 2] - np.median(maxim_control[..., 2].ravel())
+
+        _, p1 = scipy.stats.wilcoxon(x1, alternative='greater')
+        _, p2 = scipy.stats.wilcoxon(x2, alternative='greater')
+        print(p1)
+        print(p2)
+    
         method1 = 'FBC'
         method2 = 'FFC'
-    
-        ax[1].set_xticklabels([method1, method2, 'Random'], fontsize=12, rotation=45)
-        ax[1].set_yticks([0.0, 2.5, 5.0])
+
+        ax[1].set_yticklabels([method1, method2], fontsize=12)
+        ax[1].set_xticks([0.0, 30, 60])
+        ax[1].set_xlim([0, 70])
         ax[1].tick_params(axis='both', labelsize=12)
         #ax.set_ylabel(r'$\sum_i Im(\lambda_i)$', fontsize=22)
-        ax[1].set_ylabel('Average Dynamic Range', fontsize=12)
+        ax[1].set_xlabel('Average Dynamic Range above Random', fontsize=12)
         #ax.set_title('****', fontsize=14)
 
-        #ax.invert_xaxis()
+        ax[1].invert_yaxis()
     
         # fill with colors
         colors = ['red', 'black', 'blue']   

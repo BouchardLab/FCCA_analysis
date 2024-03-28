@@ -23,9 +23,9 @@ from decoders import lr_decoder
 
 if __name__ == '__main__':
 
-    M1 = False
-    S1 = False
-    HPC = True 
+    M1 = True
+    S1 = True
+    HPC = False 
 
     # Where to save?
     if len(sys.argv) > 1:
@@ -160,7 +160,7 @@ if __name__ == '__main__':
         axin.set_xlim([-0.5, 1.5])
         axin.set_xticks([0, 1])
         axin.set_xticklabels(['FFC', 'FBC'], fontsize=10)
-        axin.set_title('****')
+        #axin.set_title('****')
         #fig.tight_layout()
         fig.savefig('%s/indy_vel_decoding.pdf' % figpath, bbox_inches='tight', pad_inches=0)
 
@@ -180,8 +180,8 @@ if __name__ == '__main__':
         ax.tick_params(axis='x', labelsize=16)
         ax.tick_params(axis='y', labelsize=16)
 
-        ax.vlines(6, 0, np.mean(fca_r2 - pca_r2, axis=0)[5], linestyles='dashed', color='blue')
-        ax.hlines(np.mean(fca_r2 - pca_r2, axis=0)[5], 0, 6, linestyles='dashed', color='blue')
+        #ax.vlines(6, 0, np.mean(fca_r2 - pca_r2, axis=0)[5], linestyles='dashed', color='blue')
+        #ax.hlines(np.mean(fca_r2 - pca_r2, axis=0)[5], 0, 6, linestyles='dashed', color='blue')
         ax.set_xlim([1, 30])
         ax.set_xticks([1, 6, 15, 30])
         ax.set_yticks([0., 0.12])
@@ -298,7 +298,7 @@ if __name__ == '__main__':
         axin.set_xlim([-0.5, 1.5])
         axin.set_xticks([0, 1])
         axin.set_xticklabels(['FFC', 'FBC'], fontsize=10)
-        axin.set_title('***')
+        #axin.set_title('***')
         #fig.tight_layout()
         fig.savefig('%s/S1_vel_decoding.pdf' % figpath, bbox_inches='tight', pad_inches=0)
 
@@ -322,8 +322,8 @@ if __name__ == '__main__':
         ax.set_ylim([0., 0.11])
         ax.set_xticks([1, 6, 15, 30])
 
-        ax.vlines(6, 0, np.mean(fca_r2 - pca_r2, axis=0)[5], linestyles='dashed', color='blue')
-        ax.hlines(np.mean(fca_r2 - pca_r2, axis=0)[5], 0, 6, linestyles='dashed', color='blue')
+        #ax.vlines(6, 0, np.mean(fca_r2 - pca_r2, axis=0)[5], linestyles='dashed', color='blue')
+        #ax.hlines(np.mean(fca_r2 - pca_r2, axis=0)[5], 0, 6, linestyles='dashed', color='blue')
         ax.set_xlim([0, 30])
         fig.savefig('%s/S1_vel_decoding_delta.pdf' % figpath, bbox_inches='tight', pad_inches=0)
 

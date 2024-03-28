@@ -167,22 +167,24 @@ if __name__ == '__main__':
         cmap_new = truncate_colormap(cm.RdGy_r, 0., 0.9)
         ratio = np.divide(x1, x1 + x2)
 
-        h = ax.scatter(np.log10(x1), np.log10(x2), c=ratio, edgecolors=(0.8, 0.8, 0.8, 0.8), linewidth=0.01, s=10, cmap=cmap_new)
+        h = ax.scatter(np.log10(x1), np.log10(x2), c=ratio, edgecolors=(0.6, 0.6, 0.6, 0.6), linewidth=0.01, s=15, cmap=cmap_new)
         # Highlight top neurons by modulating size and linewidth
-        s = 10 * np.zeros(x1.shape)
-        s[top_neurons_fca] = 25
-        s[top_neurons_pca] = 25
-        h = ax.scatter(np.log10(x1), np.log10(x2), c=ratio, edgecolors=(0.8, 0.8, 0.8, 0.8), linewidth=0.01, s=s, cmap=cmap_new)
+        # # s = 10 * np.zeros(x1.shape)
+        # # s[top_neurons_fca] = 25
+        # # s[top_neurons_pca] = 25
+        # h = ax.scatter(np.log10(x1), np.log10(x2), c=ratio, edgecolors=(0.8, 0.8, 0.8, 0.8), linewidth=0.01, s=s, cmap=cmap_new)
         cbar = plt.colorbar(h, cax=fig.add_axes([0.925, 0.25, 0.025, 0.5]))
         cbar.set_label('Relative FBC Importance', fontsize=16)
         cbar.set_ticks([0.2, 0.8])
         cbar.ax.tick_params(labelsize=16)
         # Annotate with the spearman-r
-        r = scipy.stats.spearmanr(x1, x2)[0]
-
+        r = scipy.stats.spearmanr(x1, x2)
+        print('Spearman sample size:%d' % x1.size)
+        print('Spearman:%f' % r[0])
+        print('Spearman p:%f' % r[1])
 
         # x = np.array(loadings_fca)[top_neurons_fca]
-        # y = np.array(loadings_pca)[top_neurons_fca]
+        # y = np.array(loadings_pca)[top_neurons_fca]+
 
         # x1 = np.array(loadings_fca)[top_neurons_fca]
         # x2 = np.array(loadings_pca)[top_neurons_fca]
@@ -202,10 +204,10 @@ if __name__ == '__main__':
         # x = np.array(loadings_fca)[top_neurons_pca]
         # y = np.array(loadings_pca)[top_neurons_pca]
         # ax.scatter(np.log10(x), np.log10(y), color=(0, 0, 0, 0.2), edgecolors=(0, 0, 0, 0.5), s=15)
-        ax.set_xlim([-5, 0.1])
-        ax.set_ylim([-5, 0.1])
-        ax.set_xticks([0, -2, -4])
-        ax.set_yticks([0, -2, -4])
+        ax.set_xlim([-6, 0.1])
+        ax.set_ylim([-6, 0.1])
+        ax.set_xticks([0, -3, -6])
+        ax.set_yticks([0, -3, -6])
         # ax_hist1.set_xlim([-5, 0.1])
         # ax_hist2.set_ylim([-5, 0.1])
         # ax_hist1.set_yticks([0, 1.])
@@ -469,6 +471,8 @@ if __name__ == '__main__':
             fig.savefig('/home/akumar/nse/neural_control/figs/su_figs_debug/%i_noact.pdf' % i, bbox_inches='tight', pad_inches=0)
             fig.tight_layout()
 
+        print(np.median(r1p_))
+        print(np.median(r1f_))
         stats, p = scipy.stats.wilcoxon(r1p_, r1f_, alternative='greater')
         print('Wilcoxon p-value for leverage socre prediction: %f' % p)
 
@@ -484,6 +488,7 @@ if __name__ == '__main__':
         ax[0].set_xticklabels(['var', 'dec', 'enc'])
         ax[1].set_xticklabels(['var', 'dec', 'enc'])
 
+
         fig.savefig('/home/akumar/nse/neural_control/figs/su_figs_debug/coef_boxplot_noact.pdf', bbox_inches='tight', pad_inches=0)
 
         # Make a boxplot out of it
@@ -493,8 +498,8 @@ if __name__ == '__main__':
         bplot = ax.boxplot([r1f_, r1p_], patch_artist=True,
                      medianprops=medianprops, notch=False, showfliers=False, whiskerprops=whiskerprops, showcaps=False)
         ax.set_xticklabels(['FBC', 'FFC'], rotation=45)
-        ax.set_ylim([0, 1])
-        ax.set_yticks([0, 0.5, 1])
+        ax.set_ylim([0.4, 1])
+        ax.set_yticks([0.4, 1])
         ax.tick_params(axis='both', labelsize=16)
         ax.set_ylabel('Spearman ' + r'$\rho$', fontsize=18)
 
@@ -567,21 +572,20 @@ if __name__ == '__main__':
         a1 = pvec[0] * 3
         a2 = pvec[1] * 2
         a3 = pvec[2]
-        pdb.set_trace()
         print(max([a1, a2, a3]))   
 
-        std_err = np.std(su_r, axis=0).ravel()/np.sqrt(35)
-        su_r = np.mean(su_r, axis=0).ravel()
+        iqr = (np.percentile(su_r, 75, axis=0).ravel() - np.percentile(su_r, 25, axis=0).ravel())/2
+        median = np.median(su_r, axis=0).ravel()
 
         # Permute so that each statistic is next to each other
         # No ACT
-        su_r = su_r[[0, 4, 2, 6, 3, 7]]
-        std_err = std_err[[0, 4, 2, 6, 3, 7]]
-
+        iqr = iqr[[0, 4, 2, 6, 3, 7]]
+        median = median[[0, 4, 2, 6, 3, 7]]
+        print(su_r)
         bars = ax.bar([0, 1, 3, 4, 6, 7],
-                      su_r,
+                      median,
                       color=['r', 'k', 'r', 'k', 'r', 'k'], alpha=0.65,
-                      yerr=std_err, capsize=5)
+                      yerr=iqr, capsize=5)
 
         # Place numerical values above the bars
         # for rect in bars: 

@@ -2,6 +2,7 @@ import numpy as np
 import scipy
 from scipy import signal
 import pdb
+from copy import deepcopy
 
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import KFold
@@ -539,7 +540,7 @@ def lr_decode_windowed(X, Z, lag, train_windows, test_windows, transition_times,
         assert(np.all([s.size == np.arange(t[0], t[1]).size for (s, t) in zip(pkassign[train_idxs], tt_train)]))
         subset_selection = [np.argwhere(np.array(s) == 0).squeeze() for s in pkassign[train_idxs]]
         Xtrain, Ztrain, vi1, fi1 = apply_window(X, Z, lag, train_windows, tt_train, decoding_window, include_velocity, include_acc, subset_selection, offsets=offsets_train,
-                                      enforce_full_indices=True)
+                                                enforce_full_indices=True)
 
     else:
         Xtrain, Ztrain, vi1, fi1 = apply_window(X, Z, lag, train_windows, tt_train, decoding_window, include_velocity, include_acc, offsets=offsets_train,
@@ -643,6 +644,71 @@ def lr_decode_windowed(X, Z, lag, train_windows, test_windows, transition_times,
         raise 
 
 ############################### Residual decoding #########################################
+def decorrelate(Z, decorrelation='entire', embed=True, transition_times=None, window_indices=None):
+    print('Decorrelating!')
+    if decorrelation == 'entire':
+        pos = Z[:, 0:2]
+        vel = Z[:, 2:4]
+        acc = Z[:, 4:]
+
+        posdecodingregressor = LinearRegression(fit_intercept=True)
+        pos_vel = np.hstack([pos, vel])
+        posdecodingregressor.fit(pos, vel)
+
+        # Extract the residuals
+        vel_residuals = vel - posdecodingregressor.predict(pos)
+
+        posveldecodingregressor = LinearRegression(fit_intercept=True)
+        posveldecodingregressor.fit(pos_vel, acc)
+        # Extract the residuals
+        acc_residuals = acc - posveldecodingregressor.predict(pos_vel)
+    elif decorrelation == 'trialized':
+
+        # Segment Z by transition times
+        Z_segmented = [Z[t[0]:t[1]] for t in transition_times]
+
+        # Concatenate, predict, and re-segment
+        vel_residuals, acc_residuals = decorrelate(np.concatenate(Z_segmented), decorrelation='entire')
+
+        transition_lengths = np.cumsum([t[1] - t[0] for t in transition_times])
+        transition_lengths = np.concatenate([[0], transition_lengths]).astype(int)
+
+        vel_segmented = [vel_residuals[transition_lengths[i]:transition_lengths[i + 1]] 
+                        for i in range(len(transition_lengths) - 1)]
+        acc_segmented = [acc_residuals[transition_lengths[i]:transition_lengths[i + 1]] 
+                        for i in range(len(transition_lengths) - 1)]
+        # assert(np.all([v.shape[0] == t[1] - t[0] for (v, t) in zip(vel_segmented, transition_times)]))
+
+        if embed:
+            vel_residuals = deepcopy(Z)[:, 2:4] 
+            acc_residuals = deepcopy(Z)[:, 4:]
+
+            for i, t in enumerate(transition_times):
+                vel_residuals[t[0]:t[1]] = vel_segmented[i]
+                acc_residuals[t[0]:t[1]] = acc_segmented[i]
+        else:
+            vel_residuals = vel_segmented
+            acc_residuals = acc_segmented
+
+
+    elif decorrelation == 'trialized_windowed':
+
+        # In this case, the segmentation and windowing has already been done for us
+        Z = np.concatenate(Z)
+        vel_residuals, acc_residuals = decorrelate(Z, decorrelation='entire')
+        # Need to re-apply the windowing/segmentation
+        # For windows later in the transition period, we will have some window indices that only contain
+        # a single element
+
+        transition_lengths = np.cumsum([len(w) for w in window_indices])
+        transition_lengths = np.concatenate([[0], transition_lengths]).astype(int)
+        vel_residuals = [vel_residuals[transition_lengths[i]:transition_lengths[i + 1]] 
+                        for i in range(len(transition_lengths) - 1)]
+        acc_residuals = [acc_residuals[transition_lengths[i]:transition_lengths[i + 1]] 
+                        for i in range(len(transition_lengths) - 1)]
+
+    return vel_residuals, acc_residuals
+
 # Sequentually regress position onto velocity, predict the reisudals, and then regress position and 
 # acceleration onto acceleration, and then predict the residuals
 def lr_residual_decoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decoding_window=1):
@@ -651,21 +717,8 @@ def lr_residual_decoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decodin
 
     Xtest, Xtrain, Ztest, Ztrain = lr_preprocess(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, 
                                                  decoding_window, include_velocity=True, include_acc=True)
-    posdecodingregressor = LinearRegression(fit_intercept=True)
     # No train test split here
-    pos = np.vstack([Ztrain[:, 0:2], Ztest[:, 0:2]])
-    vel = np.vstack([Ztrain[:, 2:4], Ztest[:, 2:4]])
-    acc = np.vstack([Ztrain[:, 4:], Ztest[:, 4:]])
-    pos_vel = np.hstack([pos, vel])
-    posdecodingregressor.fit(pos, vel)
-
-    # Extract the residuals
-    vel_residuals = vel - posdecodingregressor.predict(pos)
-
-    posveldecodingregressor = LinearRegression(fit_intercept=True)
-    posveldecodingregressor.fit(pos_vel, acc)
-    # Extract the residuals
-    acc_residuals = acc - posveldecodingregressor.predict(pos_vel)
+    vel_residuals, acc_residuals = decorrelate(np.hstack([Ztrain, Ztest]), decorrelation='entire')
 
     velresidual_decoder = LinearRegression(fit_intercept=True)
     velresidual_decoder.fit(Xtrain, vel_residuals[:Xtrain.shape[0], :])
@@ -678,3 +731,242 @@ def lr_residual_decoder(Xtest, Xtrain, Ztest, Ztrain, trainlag, testlag, decodin
     lr_r2_acc = r2_score(acc_residuals[Xtrain.shape[0]:, :], acc_residuals_pred)       
 
     return np.nan, lr_r2_vel, lr_r2_acc, np.nan, np.nan, np.nan, np.nan
+
+def apply_window_residual(X, Z, lag, window, transition_times, decoding_window, include_velocity, include_acc, 
+                 subset_selection=None, offsets=None, enforce_full_indices=False, decorrelation='entire'):
+
+    include_acc = True
+
+    # Apply decoding window
+    X = form_lag_matrix(X, decoding_window)
+    Z = Z[decoding_window//2:, :]
+    Z = Z[:X.shape[0], :]
+
+    # Expand state space to include velocity and acceleration
+    if np.any([include_velocity, include_acc]):
+        Z, X = expand_state_space([Z], [X], include_velocity, include_acc)
+
+        # Flatten list structure imposed by expand_state_space
+        Z = Z[0]
+        X= X[0]
+
+    # This *also* requires shifting the transition times, as behavior will have been affected
+    # There is a shift due to the formation of the lag matrix *and* the expansion of the state sapce, 
+    # which will cut off the first 2 sample points, if include_acc is set to true
+
+    if decoding_window > 1:
+        transition_times = [(t[0] - decoding_window//2, t[1] - decoding_window//2) for t in transition_times]        
+    try:
+        assert(X.shape[0] == Z.shape[0])
+    except:
+        pdb.set_trace()
+
+    if include_acc:
+        transition_times = [(t[0] - 2, t[1] - 2) for t in transition_times]
+    elif include_velocity:
+        transition_times = [(t[0] - 1, t[1] - 1) for t in transition_times]
+
+    # We assume that the subset indices have already been shifted (this is the case in biasvariance_vst)
+
+    # Decorrelate the time series according to the desired decorrelation method
+    # Windowed decorrelation is done after windowing
+    if decorrelation in ['entire', 'trialized']:
+        vel_residuals, acc_residuals = decorrelate(Z, decorrelation=decorrelation, transition_times=transition_times)
+
+        Z = np.hstack([vel_residuals, acc_residuals])
+
+    # Segment the time series with respect to the transition times (including lag)
+    xx = []
+    zz = []
+
+    valid_idxs = []
+    # Which reaches had no truncation due to start of the next reach?
+    full_idxs = []
+
+    # If given a single window, duplicate it across all transition times
+    if len(window) != len(transition_times):
+        window = [window for _ in range(len(transition_times))]
+
+    # If no offsets provided, let it be 0 for all transition times
+    if offsets is None:
+        offsets = np.zeros(len(transition_times))
+
+    # Needed for decorrelation
+    window_indices_all = []
+
+    for i, (t0, t1) in enumerate(transition_times):
+        for j, win in enumerate(window[i]):
+            window_indices = np.arange(t0 + win[0] + offsets[i], t0 + win[1] + offsets[i])
+            if subset_selection is not None:
+                # Select only indices that do not belong to the first velocity peak
+                subset_indices = np.arange(t0, t1)[subset_selection[i]]
+                window_indices = np.intersect1d(window_indices, subset_indices)
+
+            # No matter what, we should remove segments that overlap with the next transition
+            if i < len(transition_times) - 1:
+                l1 = len(window_indices)
+                window_indices = window_indices[window_indices < transition_times[i + 1][0]]
+                if len(window_indices) == l1:
+                    full_idxs.append(i)
+            else:
+                # Or else make sure that we don't exceed the length of the time series
+                window_indices = window_indices[window_indices < Z.shape[0]]
+
+            window_indices = window_indices.astype(int)
+            zz_ = Z[window_indices]
+            # Shift x indices by lag
+            window_indices -= lag
+            xx_ = X[window_indices]
+
+            if len(xx_) > 0:
+                assert(xx_.shape[0] == zz_.shape[0])
+                if enforce_full_indices:
+                    if i in full_idxs:
+                        xx.append(xx_)
+                        zz.append(zz_)
+                else:
+                    xx.append(xx_)
+                    zz.append(zz_)
+                
+                window_indices_all.append(window_indices)
+
+                # try:
+                #     assert(full_idxs[-1] in valid_idxs or i == len(transition_times) - 1)
+                # except:
+                #     pdb.set_trace()
+
+    if decorrelation == 'trialized_windowed':
+        vel_residuals, acc_residuals = decorrelate(zz, decorrelation='trialized_windowed', 
+                                                   window_indices=window_indices_all)
+        zz = [np.hstack([v, a]) for (v, a) in zip(vel_residuals, acc_residuals)]
+    return xx, zz, valid_idxs, full_idxs
+
+def lr_residual_decode_windowed(X, Z, lag, train_windows, test_windows, transition_times, 
+                                train_idxs, test_idxs=None, 
+                                decoding_window=1, include_velocity=True, include_acc=True, 
+                                pkassign=None, apply_pk_to_train=False, offsets=None,
+                                decorrelation='entire'):
+
+    # There are 3 versions of this - decorrelation of the entire time series...
+    # Decorrelation of the trialized time series
+    # Decorrelation of each windowed segment
+
+    behavior_dim = Z.shape[-1]
+
+    # We have been given a list (of list) of windows for each transition
+    win_min = train_windows[0][0]
+
+    if win_min >= 0:
+        win_min = 0
+
+    # Filter out by transitions that lie within the train idxs, and stay clear of the start and end
+    tt_train = [(t, idx) for idx, t in enumerate(transition_times) 
+                if idx in train_idxs and t[0] > (lag + np.abs(win_min)) and t[1] < (Z.shape[0] - lag - np.abs(win_min))]
+    # Re-assign train idxs removing those reaches that were outside the start/end region
+    train_idxs = [x[1] for x in tt_train]
+    tt_train = [x[0] for x in tt_train]
+
+    if offsets is not None:
+        offsets_train = offsets[train_idxs]
+    else:
+        offsets_train = None
+
+    if apply_pk_to_train:
+        # Train on the first velocity peak only
+        assert(np.all([s.size == np.arange(t[0], t[1]).size for (s, t) in zip(pkassign[train_idxs], tt_train)]))
+        subset_selection = [np.argwhere(np.array(s) == 0).squeeze() for s in pkassign[train_idxs]]
+        Xtrain, Ztrain, vi1, fi1 = apply_window_residual(X, Z, lag, train_windows, tt_train, decoding_window, include_velocity, include_acc, subset_selection, offsets=offsets_train,
+                                                         enforce_full_indices=True, decorrelation=decorrelation)
+
+    else:
+        Xtrain, Ztrain, vi1, fi1 = apply_window_residual(X, Z, lag, train_windows, tt_train, decoding_window, include_velocity, include_acc, offsets=offsets_train,
+                                                         enforce_full_indices=True, decorrelation=decorrelation)
+
+    if Xtrain is None:
+        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, None, 0
+    else:
+        n = len(Xtrain)
+
+    if test_idxs is not None:
+        # Filter out by transitions that lie within the test idxs, and stay clear of the start and end
+        tt_test = [(t, idx) for idx, t in enumerate(transition_times) 
+                   if idx in test_idxs and t[0] > (lag + np.abs(win_min)) and t[1] < (Z.shape[0] - lag - np.abs(win_min))]
+        # Re-assign test idxs removing those reaches that were outside the start/end region
+        test_idxs = [x[1] for x in tt_test]
+        tt_test = [x[0] for x in tt_test]
+
+
+        if offsets is not None:
+            offsets_test = offsets[test_idxs]
+        else:
+            offsets_test = None
+
+        if pkassign is not None:
+            assert(np.all([s.size == np.arange(t[0], t[1]).size for (s, t) in zip(pkassign[test_idxs], tt_test)]))
+            subset_selection = [np.argwhere(np.array(s) != 0).squeeze() for s in pkassign[test_idxs]]
+            Xtest, Ztest, _, fi2 = apply_window_residual(X, Z, lag, test_windows, tt_test, decoding_window, include_velocity, include_acc, subset_selection, offsets=offsets_test, 
+                                               enforce_full_indices=True, decorrelation=decorrelation)        
+        else:
+            Xtest, Ztest, _, fi2 = apply_window_residual(X, Z, lag, test_windows, tt_test, decoding_window, include_velocity, include_acc, offsets=offsets_test,
+                                               enforce_full_indices=True, decorrelation=decorrelation)
+
+    else:
+        Xtest = None
+        Ztest = None
+
+    # Standardize
+    # X = StandardScaler().fit_transform(X)
+    # Z = StandardScaler().fit_transform(Z)
+    decodingregressor = LinearRegression(fit_intercept=True)
+
+    # Fit and score
+    if len(Xtrain) == 0:
+        return tuple([np.nan] * 9) + (0,)
+    decodingregressor.fit(np.concatenate(Xtrain), np.concatenate(Ztrain))
+    Zpred = decodingregressor.predict(np.concatenate(Xtrain))
+
+    # Re-segment Zpred
+    idx = 0
+    Zpred_segmented = []
+    for i, z in enumerate(Ztrain):
+        Zpred_segmented.append(Zpred[idx:idx+z.shape[0]])
+        idx += z.shape[0]
+
+    assert(np.all([z1.shape[0] == z2.shape[0] for (z1, z2) in zip(Zpred_segmented, Ztrain)]))
+    #Ztrain = np.concatenate(Ztrain)
+    if Xtest is not None:
+        if len(Xtest) > 0:
+            num_test_reaches = len(Xtest)
+            Zpred_test = decodingregressor.predict(np.concatenate(Xtest))
+        
+            idx = 0
+            Zpred_test_segmented = []
+            for i, z in enumerate(Ztest):
+                Zpred_test_segmented.append(Zpred_test[idx:idx+z.shape[0]])
+                idx += z.shape[0]
+
+            assert(np.all([z1.shape[0] == z2.shape[0] for (z1, z2) in zip(Zpred_test_segmented, Ztest)]))
+
+        else:
+            Xtest = None
+            Ztest = None
+            num_test_reaches = 0
+
+
+    # Additionally calculate the individual MSE. Do not average over data points
+    mse_train = [(z1 - z2)**2 for (z1, z2) in zip(Zpred_segmented, Ztrain)]
+    Ztrain = np.concatenate(Ztrain)
+    lr_r2_vel = r2_score(Ztrain[..., 0:2], Zpred[..., 0:2])
+    lr_r2_acc = r2_score(Ztrain[..., 2:], Zpred[..., 2:])
+
+    if Xtest is not None:
+        mse_test = [(z1 - z2)**2 for (z1, z2) in zip(Zpred_test_segmented, Ztest)]
+        Ztest = np.concatenate(Ztest)
+        lr_r2_velt = r2_score(Ztest[..., 0:2], Zpred_test[..., 0:2])
+        lr_r2_acct = r2_score(Ztest[..., 2:], Zpred_test[..., 2:])
+    else:
+        mse_test = np.nan
+        lr_r2_post = np.nan
+        lr_r2_velt = np.nan
+        lr_r2_acct = np.nan
+    return np.nan, lr_r2_vel, lr_r2_acc, np.nan, lr_r2_velt, lr_r2_acct, decodingregressor, num_test_reaches, fi1, fi2, mse_train, mse_test 
